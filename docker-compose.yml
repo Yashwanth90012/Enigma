@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: enigma
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-enigma_local_only}
+      POSTGRES_DB: enigma
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enigma -d enigma"]
+      interval: 5s
+      retries: 20
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: postgresql://enigma:${DB_PASSWORD:-enigma_local_only}@postgres:5432/enigma
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+      - ./tests:/app/tests
+      - ./logs:/app/logs
+      - ./frontend/dist:/app/frontend/dist
+      - ./.env:/app/.env:ro
+volumes:
+  pgdata:

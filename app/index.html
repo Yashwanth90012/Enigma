@@ -1,0 +1,3335 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ENIGMA — Autonomous Rental Financial Reconciliation Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      try {
+        const saved = localStorage.getItem('enigma_theme');
+        const theme = saved === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+  <style>
+    /* ========================================================= */
+    /* THEME SYSTEM: LIGHT (Default) & DARK Options              */
+    /* ========================================================= */
+    :root, [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-header: rgba(255, 255, 255, 0.92);
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-inset: #f1f5f9;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --border-focus: rgba(8, 145, 178, 0.6);
+      --primary: #0891b2;
+      --primary-glow: rgba(8, 145, 178, 0.2);
+      --primary-dark: #0e7490;
+      --emerald: #059669;
+      --emerald-glow: rgba(5, 150, 105, 0.15);
+      --amber: #d97706;
+      --amber-glow: rgba(217, 119, 6, 0.15);
+      --rose: #e11d48;
+      --rose-glow: rgba(225, 29, 72, 0.15);
+      --blue: #2563eb;
+      --purple: #7c3aed;
+      --purple-glow: rgba(124, 58, 237, 0.15);
+      --text-heading: #0f172a;
+      --text-main: #1e293b;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      --brand-title-grad: linear-gradient(135deg, #0f172a 30%, #0891b2 100%);
+      --bg-gradient: radial-gradient(circle at 10% 15%, rgba(8, 145, 178, 0.08) 0%, transparent 40%),
+                     radial-gradient(circle at 90% 85%, rgba(124, 58, 237, 0.06) 0%, transparent 45%);
+      --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
+      --card-shadow-hover: 0 4px 6px rgba(15, 23, 42, 0.04), 0 10px 20px rgba(15, 23, 42, 0.06);
+      --btn-default-bg: #f8fafc;
+      --btn-default-color: #1e293b;
+      --btn-default-border: #cbd5e1;
+      --btn-default-hover: #e2e8f0;
+      --pill-bg: #f1f5f9;
+      --pill-border: #cbd5e1;
+      --pill-color: #334155;
+      --hub-container-bg: #f1f5f9;
+      --modal-bg: #ffffff;
+      --code-bg: #0f172a;
+      --code-color: #c7d2fe;
+      --scrollbar-track: #f1f5f9;
+      --scrollbar-thumb: #cbd5e1;
+      --theme-toggle-bg: #f1f5f9;
+      --theme-toggle-color: #0f172a;
+      --theme-toggle-border: #cbd5e1;
+      --dimension-grid-bg: #f8fafc;
+      --briefing-box-bg: rgba(8, 145, 178, 0.06);
+      --briefing-box-border: rgba(8, 145, 178, 0.25);
+      --input-bg: #ffffff;
+      --input-color: #0f172a;
+      --input-border: #cbd5e1;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-base: #070d18;
+      --bg-header: rgba(10, 16, 30, 0.85);
+      --bg-card: rgba(15, 23, 42, 0.75);
+      --bg-card-hover: rgba(22, 34, 61, 0.85);
+      --bg-inset: rgba(9, 14, 27, 0.7);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.15);
+      --border-focus: rgba(6, 182, 212, 0.4);
+      --primary: #06b6d4;
+      --primary-glow: rgba(6, 182, 212, 0.25);
+      --primary-dark: #0891b2;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.2);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.2);
+      --rose: #f43f5e;
+      --rose-glow: rgba(244, 63, 94, 0.2);
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --purple-glow: rgba(139, 92, 246, 0.2);
+      --text-heading: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --brand-title-grad: linear-gradient(135deg, #ffffff 40%, var(--primary));
+      --bg-gradient: radial-gradient(circle at 10% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
+                     radial-gradient(circle at 90% 85%, rgba(139, 92, 246, 0.07) 0%, transparent 45%);
+      --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      --card-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.4);
+      --btn-default-bg: rgba(255, 255, 255, 0.05);
+      --btn-default-color: #ffffff;
+      --btn-default-border: var(--border-subtle);
+      --btn-default-hover: rgba(255, 255, 255, 0.1);
+      --pill-bg: rgba(255, 255, 255, 0.04);
+      --pill-border: var(--border-subtle);
+      --pill-color: var(--text-muted);
+      --hub-container-bg: rgba(0, 0, 0, 0.3);
+      --modal-bg: #0f172a;
+      --code-bg: var(--bg-inset);
+      --code-color: #a5b4fc;
+      --scrollbar-track: rgba(0, 0, 0, 0.2);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+      --theme-toggle-bg: rgba(255, 255, 255, 0.05);
+      --theme-toggle-color: #f8fafc;
+      --theme-toggle-border: var(--border-subtle);
+      --dimension-grid-bg: rgba(0, 0, 0, 0.2);
+      --briefing-box-bg: rgba(6, 182, 212, 0.04);
+      --briefing-box-border: rgba(6, 182, 212, 0.2);
+      --input-bg: var(--bg-inset);
+      --input-color: #ffffff;
+      --input-border: var(--border-subtle);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: var(--bg-gradient);
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+    /* Top Navigation */
+    header {
+      background: var(--bg-header);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 12px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, var(--primary), var(--blue));
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+    .brand-title {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: var(--brand-title-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .telemetry-badges {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      color: var(--pill-color);
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .pill.active {
+      background: rgba(8, 145, 178, 0.12);
+      border-color: rgba(8, 145, 178, 0.35);
+      color: var(--primary);
+    }
+    .pill.emerald {
+      background: var(--emerald-glow);
+      border-color: rgba(5, 150, 105, 0.4);
+      color: var(--emerald);
+    }
+    .pill.amber {
+      background: var(--amber-glow);
+      border-color: rgba(217, 119, 6, 0.4);
+      color: var(--amber);
+    }
+    .pill.rose {
+      background: var(--rose-glow);
+      border-color: rgba(225, 29, 72, 0.4);
+      color: var(--rose);
+    }
+    .pill.purple {
+      background: var(--purple-glow);
+      border-color: rgba(124, 58, 237, 0.4);
+      color: var(--purple);
+    }
+    .indicator-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .pulse-dot {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--btn-default-border);
+      background: var(--btn-default-bg);
+      color: var(--btn-default-color);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--btn-default-hover);
+      border-color: var(--border-focus);
+      transform: translateY(-1px);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #06b6d4, var(--primary));
+      box-shadow: 0 0 18px var(--primary-glow);
+      color: #fff;
+    }
+    .btn-emerald {
+      background: linear-gradient(135deg, #10b981, #059669);
+      border-color: #10b981;
+      color: #fff;
+    }
+    .btn-amber {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      border-color: #f59e0b;
+      color: #fff;
+    }
+    .btn-rose {
+      background: linear-gradient(135deg, #f43f5e, #e11d48);
+      border-color: #f43f5e;
+      color: #fff;
+    }
+    .btn-purple {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      border-color: #8b5cf6;
+      color: #fff;
+    }
+    .theme-toggle-btn {
+      background: var(--theme-toggle-bg);
+      color: var(--theme-toggle-color);
+      border: 1px solid var(--theme-toggle-border);
+      border-radius: 20px;
+      padding: 7px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .theme-toggle-btn:hover {
+      background: var(--btn-default-hover);
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .theme-icon-sun { color: #d97706; }
+    .theme-icon-moon { color: #0284c7; }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 20px 24px;
+      max-width: 1720px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Portfolio KPI Dashboard */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--card-shadow);
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    .kpi-card:hover {
+      border-color: var(--border-focus);
+      box-shadow: var(--card-shadow-hover);
+      transform: translateY(-2px);
+    }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      letter-spacing: -0.02em;
+      color: var(--text-heading);
+    }
+    .kpi-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .kpi-accent-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+    .accent-cyan { background: var(--primary); }
+    .accent-emerald { background: var(--emerald); }
+    .accent-amber { background: var(--amber); }
+    .accent-rose { background: var(--rose); }
+    .accent-purple { background: var(--purple); }
+
+    /* Dual Pane Layout */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 410px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1080px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Left Pane: Lease Portfolio Directory */
+    .directory-pane {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: calc(100vh - 240px);
+      position: sticky;
+      top: 80px;
+    }
+    .directory-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .directory-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-box {
+      position: relative;
+    }
+    .search-input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: var(--radius-sm);
+      padding: 9px 12px 9px 34px;
+      color: var(--input-color);
+      font-size: 12px;
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .filter-btn {
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      border-radius: 14px;
+      color: var(--pill-color);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .filter-btn.active, .filter-btn:hover {
+      background: rgba(8, 145, 178, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .lease-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+    .lease-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .lease-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-strong);
+      transform: translateX(2px);
+    }
+    .lease-card.selected {
+      background: rgba(8, 145, 178, 0.08);
+      border-color: var(--primary);
+    }
+    .lease-card.selected::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: var(--primary);
+    }
+    .card-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .lease-id-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--primary);
+      background: rgba(8, 145, 178, 0.12);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .card-tenant {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-heading);
+      margin-bottom: 2px;
+    }
+    .card-address {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 6px;
+    }
+    .card-rent {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-heading);
+    }
+    .card-variance {
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+    .card-variance.neg { color: var(--rose); }
+    .card-variance.zero { color: var(--emerald); }
+
+    /* Right Pane: Investigation Studio */
+    .studio-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Active Case Header Card */
+    .case-banner {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      position: relative;
+    }
+    .case-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .case-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .case-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .case-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .case-meta span strong {
+      color: var(--text-heading);
+    }
+    .case-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 3-Way Match Matrix Cards */
+    .ledger-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 900px) {
+      .ledger-grid { grid-template-columns: 1fr; }
+    }
+    .ledger-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--card-shadow);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .ledger-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 8px;
+    }
+    .ledger-tag {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .ledger-tag.cyan { color: var(--primary); }
+    .ledger-tag.purple { color: var(--purple); }
+    .ledger-tag.emerald { color: var(--emerald); }
+    .ledger-amount {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-heading);
+    }
+    .ledger-meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .ledger-meta-val {
+      font-family: var(--font-mono);
+      color: var(--text-heading);
+      font-weight: 500;
+    }
+
+    /* Discrepancy Callout Banner */
+    .discrepancy-callout {
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .discrepancy-callout.reconciled {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #a7f3d0;
+    }
+    .discrepancy-callout.partial {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: #fde68a;
+    }
+    .discrepancy-callout.review {
+      background: rgba(244, 63, 94, 0.1);
+      border-color: rgba(244, 63, 94, 0.3);
+      color: #fecdd3;
+    }
+    [data-theme="light"] .discrepancy-callout.reconciled {
+      background: #ecfdf5;
+      border-color: #6ee7b7;
+      color: #047857;
+    }
+    [data-theme="light"] .discrepancy-callout.partial {
+      background: #fffbeb;
+      border-color: #fcd34d;
+      color: #b45309;
+    }
+    [data-theme="light"] .discrepancy-callout.review {
+      background: #fff1f2;
+      border-color: #fca5a5;
+      color: #be123c;
+    }
+
+    /* Tabs Component */
+    .tabs-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .tab-nav {
+      display: flex;
+      background: var(--bg-inset);
+      border-bottom: 1px solid var(--border-subtle);
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 12px 20px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text-heading);
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: var(--bg-card);
+    }
+    .tab-pane {
+      padding: 20px;
+      display: none;
+    }
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* AI Executive Briefing UI */
+    .briefing-box {
+      background: var(--briefing-box-bg);
+      border: 1px solid var(--briefing-box-border);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .briefing-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .briefing-narrative {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-main);
+      margin-bottom: 14px;
+    }
+    .recommendation-alert {
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 3px solid var(--amber);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 13px;
+      color: #fef3c7;
+    }
+    [data-theme="light"] .recommendation-alert {
+      background: #fffbeb;
+      border-left: 3px solid var(--amber);
+      color: #92400e;
+    }
+    .agent-timeline {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .agent-step-card {
+      background: var(--bg-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 11px;
+    }
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .step-status {
+      font-weight: 700;
+      color: var(--emerald);
+    }
+
+    /* Work Order Correlation Callout */
+    .wo-alert-box {
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      margin-top: 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .wo-alert-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #ffe4e6;
+    }
+    [data-theme="light"] .wo-alert-box {
+      background: #fff1f2;
+      border-color: #fca5a5;
+      color: #9f1239;
+    }
+    [data-theme="light"] .wo-alert-text {
+      color: #881337;
+    }
+
+    /* Evidence & Work Orders View */
+    .evidence-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .evidence-card {
+      background: var(--bg-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+    .evidence-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .evidence-id {
+      font-family: var(--font-mono);
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .evidence-rrf {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .evidence-body {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-main);
+    }
+
+    /* World Model Timeline & Lineage */
+    .event-stream {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .event-row {
+      background: var(--bg-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .event-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .event-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--pill-bg);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-heading);
+    }
+    .event-time {
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+
+    /* Property Manager Decision & Sign-off Dock */
+    .manager-dock {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .dock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .dock-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dock-form {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .note-input {
+      flex: 1;
+      min-width: 280px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      color: var(--input-color);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      outline: none;
+    }
+    .note-input:focus { border-color: var(--primary); }
+
+    /* Modal Styling */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-card {
+      background: var(--modal-bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 650px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+      color: var(--text-main);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+    }
+    .modal-title { font-size: 16px; font-weight: 700; color: var(--text-heading); }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    /* Form Inputs and Selects Global */
+    input, select, textarea {
+      background: var(--input-bg) !important;
+      color: var(--input-color) !important;
+      border: 1px solid var(--input-border) !important;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s, color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary) !important;
+    }
+
+    /* JSON Pre formatting */
+    pre.code-view {
+      background: var(--code-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--code-color);
+      max-height: 350px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* SVG Icon Helpers */
+    .icon {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      border: 2px solid rgba(255,255,255,0.2);
+      border-left-color: currentColor;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* ========================================================= */
+    /* Hub Navigation Switcher */
+    /* ========================================================= */
+    .hub-nav-bar {
+      background: var(--bg-header);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+    .hub-nav-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--hub-container-bg);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+    .hub-nav-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .hub-nav-btn:hover {
+      color: var(--text-heading);
+    }
+    .hub-nav-btn.active {
+      background: #ffffff;
+      color: var(--primary);
+      border: 1px solid rgba(8, 145, 178, 0.4);
+      box-shadow: 0 2px 8px rgba(8, 145, 178, 0.15);
+    }
+    .hub-nav-btn.active.purple-hub {
+      background: #ffffff;
+      color: var(--purple);
+      border: 1px solid rgba(124, 58, 237, 0.4);
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.15);
+    }
+    [data-theme="dark"] .hub-nav-btn.active {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2));
+      color: #fff;
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.2);
+    }
+    [data-theme="dark"] .hub-nav-btn.active.purple-hub {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(236, 72, 153, 0.2));
+      border: 1px solid rgba(139, 92, 246, 0.5);
+      box-shadow: 0 0 12px rgba(139, 92, 246, 0.25);
+      color: #fff;
+    }
+    .hub-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 12px;
+      letter-spacing: 0.04em;
+    }
+    .hub-pill.cyan { background: rgba(8, 145, 178, 0.15); color: var(--primary); }
+    .hub-pill.purple { background: rgba(124, 58, 237, 0.15); color: var(--purple); }
+    .hub-pill.amber { background: rgba(217, 119, 6, 0.15); color: var(--amber); }
+
+    /* Vendor AP Specific Styles */
+    .vendor-table-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .vendor-table-header {
+      padding: 14px 20px;
+      background: var(--bg-inset);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .vendor-table-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .vendor-invoice-item {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      transition: background 0.15s ease;
+      cursor: pointer;
+      background: var(--bg-card);
+    }
+    .vendor-invoice-item:hover {
+      background: var(--bg-card-hover);
+    }
+    .vendor-invoice-item.active {
+      background: rgba(124, 58, 237, 0.08);
+      border-left: 3px solid var(--purple);
+    }
+    [data-theme="dark"] .vendor-invoice-item.active {
+      background: rgba(139, 92, 246, 0.12);
+      border-left: 3px solid var(--purple);
+    }
+    .vendor-badge-trade {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .trade-sinks { background: rgba(6, 182, 212, 0.15); color: #0891b2; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .trade-bathtubs { background: rgba(139, 92, 246, 0.15); color: #7c3aed; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .trade-lights { background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .trade-hvac { background: rgba(59, 130, 246, 0.15); color: #2563eb; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .trade-appliances { background: rgba(16, 185, 129, 0.15); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .trade-materials { background: rgba(148, 163, 184, 0.15); color: #475569; border: 1px solid rgba(148, 163, 184, 0.3); }
+    [data-theme="dark"] .trade-sinks { color: #67e8f9; }
+    [data-theme="dark"] .trade-bathtubs { color: #c084fc; }
+    [data-theme="dark"] .trade-lights { color: #fde047; }
+    [data-theme="dark"] .trade-hvac { color: #93c5fd; }
+    [data-theme="dark"] .trade-appliances { color: #6ee7b7; }
+    [data-theme="dark"] .trade-materials { color: #cbd5e1; }
+
+    .badge-method {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .method-cashier { background: rgba(245, 158, 11, 0.15); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .method-check { background: rgba(59, 130, 246, 0.15); color: #1d4ed8; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .method-card { background: rgba(139, 92, 246, 0.15); color: #6d28d9; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .method-ach { background: rgba(6, 182, 212, 0.15); color: #0e7490; border: 1px solid rgba(6, 182, 212, 0.3); }
+    [data-theme="dark"] .method-cashier { color: #fbbf24; }
+    [data-theme="dark"] .method-check { color: #93c5fd; }
+    [data-theme="dark"] .method-card { color: #c084fc; }
+    [data-theme="dark"] .method-ach { color: #67e8f9; }
+
+    /* 4-Way Reconciliation Walkthrough Styles */
+    .investigation-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+    .investigation-header {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .inv-case-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--purple);
+      background: rgba(124, 58, 237, 0.12);
+      border: 1px solid rgba(124, 58, 237, 0.25);
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    .walkthrough-container {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .walkthrough-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 20px;
+      position: relative;
+    }
+    .walkthrough-step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .dimension-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      background: var(--dimension-grid-bg);
+      border: 1px solid var(--border-subtle);
+      padding: 12px;
+      border-radius: 8px;
+    }
+    @media (max-width: 800px) {
+      .dimension-stat-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .stat-item-label {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .stat-item-value {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .step-number-tag {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--pill-bg);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .step-number-tag.verified { background: rgba(16, 185, 129, 0.18); color: var(--emerald); border-color: rgba(16, 185, 129, 0.35); }
+    .step-number-tag.flagged { background: rgba(244, 63, 94, 0.18); color: var(--rose); border-color: rgba(244, 63, 94, 0.35); }
+    .step-number-tag.warning { background: rgba(245, 158, 11, 0.18); color: var(--amber); border-color: rgba(245, 158, 11, 0.35); }
+    .rag-citation-box {
+      background: rgba(8, 145, 178, 0.06);
+      border-left: 3px solid var(--primary);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .preset-chip {
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      color: var(--pill-color);
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-chip:hover {
+      background: rgba(124, 58, 237, 0.12);
+      border-color: var(--purple);
+      color: var(--purple);
+    }
+    .preset-chip.active {
+      background: rgba(124, 58, 237, 0.16);
+      border-color: var(--purple);
+      color: var(--purple);
+      font-weight: 700;
+    }
+    [data-theme="dark"] .preset-chip:hover {
+      background: rgba(139, 92, 246, 0.2);
+      border-color: var(--purple);
+      color: #fff;
+    }
+    [data-theme="dark"] .preset-chip.active {
+      background: rgba(139, 92, 246, 0.3);
+      border-color: var(--purple);
+      color: #fff;
+      font-weight: 700;
+    }
+  </style>
+
+</head>
+<body>
+
+  <!-- Top Global Header -->
+  <header>
+    <div class="brand">
+      <div class="logo-badge">
+        <svg class="icon" style="stroke: #fff;" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <div>
+        <div class="brand-title">ENIGMA RECONCILIATION HUB</div>
+        <div class="brand-subtitle">Autonomous Rental Financial & Compliance Command Center</div>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Badges -->
+    <div class="telemetry-badges">
+      <div class="pill active" title="Vector Database Status">
+        <span class="indicator-dot pulse-dot"></span>
+        <span>pgvector: <strong id="chunk-stat">9,300+ Chunks</strong></span>
+      </div>
+      <div class="pill emerald" id="pill-data" title="Financial Data Federation Layer">
+        <span class="indicator-dot"></span>
+        <span>Data: <strong id="data-stat">PostgreSQL Fixture</strong></span>
+      </div>
+      <div class="pill active" id="pill-ai" title="AI Executive Reasoning Engine">
+        <span class="indicator-dot"></span>
+        <span>AI: <strong id="ai-stat">Offline (Deterministic)</strong></span>
+      </div>
+      <div class="pill" title="World Model Event Sourcing Engine">
+        <span class="indicator-dot"></span>
+        <span>World Model: <strong id="events-stat">Synced</strong></span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="runBatch()" id="btn-batch">
+        <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span>Batch Reconcile</span>
+      </button>
+      <button class="btn btn-emerald" onclick="openNewLeaseModal()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        <span>+ Sign Lease</span>
+      </button>
+      <button class="btn btn-amber" onclick="openNewWorkOrderModal()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span>+ Work Order</span>
+      </button>
+      <button class="btn" onclick="openSettingsModal()">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Integrations</span>
+      </button>
+      <button class="btn" onclick="seedDatabase()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Re-Seed</span>
+      </button>
+      <!-- Light / Dark Theme Toggle Button -->
+      <button class="btn theme-toggle-btn" id="btn-theme-toggle" onclick="toggleTheme()" title="Switch Light / Dark Theme" aria-label="Toggle Theme">
+        <svg class="icon theme-icon-sun" id="theme-icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="icon theme-icon-moon" id="theme-icon-moon" style="display: none;" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span id="theme-btn-label">Light</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main App Workspace -->
+  <main>
+
+    <!-- Multi-Agent Operations Hub Switcher -->
+    <div class="hub-nav-bar">
+      <div class="hub-nav-container">
+        <button class="hub-nav-btn active" id="btn-hub-tenant" onclick="switchHub('tenant')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span>Tenant Rental AR Hub</span>
+          <span class="hub-pill cyan" id="badge-hub-tenant">100 Leases</span>
+        </button>
+        <button class="hub-nav-btn" id="btn-hub-vendor" onclick="switchHub('vendor')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          <span>Vendor Maintenance & AP Hub</span>
+          <span class="hub-pill purple" id="badge-hub-vendor">6 Vendors · PDF & RAG</span>
+        </button>
+      </div>
+
+      <div class="hub-actions-bar" id="vendor-hub-header-actions" style="display: none; align-items: center; gap: 8px;">
+        <button class="btn btn-purple" onclick="openNewVendorInvoiceModal()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <span>+ Generate Vendor PDF Invoice</span>
+        </button>
+        <button class="btn btn-emerald" onclick="openPayCurrentInvoiceModal()">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          <span>💳 Pay Bill (Check/Card)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- MODULE 1: TENANT RENTAL AR RECONCILIATION -->
+    <div id="tenant-ar-module">
+
+    <!-- Executive HUD Metric Row -->
+    <section class="kpi-row">
+
+      <div class="kpi-card">
+        <div class="kpi-accent-bar accent-cyan"></div>
+        <div class="kpi-label">
+          <span>Total Invoiced Rent</span>
+          <svg class="icon" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        </div>
+        <div class="kpi-value" id="kpi-invoiced">$0.00</div>
+        <div class="kpi-sub"><span id="kpi-leases-count">0</span> Active Residential Leases</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-accent-bar accent-emerald"></div>
+        <div class="kpi-label">
+          <span>Verified Collections</span>
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="kpi-value" id="kpi-verified" style="color: var(--emerald);">$0.00</div>
+        <div class="kpi-sub"><span id="kpi-reconciled-count">0</span> Clean 3-Way Reconciled</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-accent-bar accent-amber"></div>
+        <div class="kpi-label">
+          <span>Net Discrepancy Amount</span>
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="kpi-value" id="kpi-variance" style="color: var(--amber);">$0.00</div>
+        <div class="kpi-sub"><span id="kpi-partial-count">0</span> Withholding / Partial Items</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-accent-bar accent-rose"></div>
+        <div class="kpi-label">
+          <span>Manager Review Backlog</span>
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="kpi-value" id="kpi-backlog" style="color: var(--rose);">0</div>
+        <div class="kpi-sub"><span id="kpi-approved-count">0</span> Approved Sign-offs</div>
+      </div>
+    </section>
+
+    <!-- Dual Pane Workspace -->
+    <div class="workspace-grid">
+
+      <!-- Left Pane: Lease Portfolio Directory -->
+      <aside class="directory-pane">
+        <div class="directory-header">
+          <div class="directory-title">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>Portfolio Directory</span>
+          </div>
+          <span class="pill" id="dir-count">100 Units</span>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-box">
+          <svg class="icon search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="search-input" id="search-input" placeholder="Search tenant, address, or lease ID..." oninput="filterLeases()">
+        </div>
+
+        <!-- Filter Pills -->
+        <div class="filter-pills">
+          <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+          <button class="filter-btn" onclick="setFilter('needs_review', this)">Review (60)</button>
+          <button class="filter-btn" onclick="setFilter('partial_payment', this)">Partial (20)</button>
+          <button class="filter-btn" onclick="setFilter('reconciled', this)">Reconciled (20)</button>
+          <button class="filter-btn" onclick="setFilter('approved', this)">Approved</button>
+        </div>
+
+        <!-- Lease List -->
+        <div class="lease-list" id="lease-list-container">
+          <!-- Populated dynamically via JS -->
+          <div style="text-align: center; color: var(--text-dim); padding: 40px 0;">Loading portfolio leases...</div>
+        </div>
+      </aside>
+
+      <!-- Right Pane: Deep Investigation Studio -->
+      <section class="studio-pane">
+
+        <!-- Active Case Header Banner -->
+        <div class="case-banner" id="case-banner">
+          <div class="case-info">
+            <div class="case-title">
+              <span id="active-lease-id">LEASE-0001</span>
+              <span class="pill amber" id="active-status-pill">PARTIAL PAYMENT</span>
+              <span class="pill" id="active-approval-pill">Pending Review</span>
+            </div>
+            <div class="case-meta">
+              <span><strong>Tenant:</strong> <span id="active-tenant">Skyler Price</span></span>
+              <span><strong>Property:</strong> <span id="active-address">700 Example Grove Ave, Unit 101, Berkeley</span></span>
+              <span><strong>Monthly Rent:</strong> <span id="active-rent">$2,125.00</span></span>
+              <span><strong>Work Orders:</strong> <span id="active-wo-count">1 Order</span></span>
+            </div>
+          </div>
+
+          <div class="case-actions">
+            <button class="btn btn-primary" onclick="investigateActiveCase()" id="btn-investigate">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Run Multi-Agent Investigation</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3-Way Match Matrix Grid -->
+        <div class="ledger-grid">
+          <!-- Invoice Card -->
+          <div class="ledger-card">
+            <div class="ledger-header">
+              <span class="ledger-tag cyan">1. Billed Invoice</span>
+              <span class="pill" id="inv-id">INV-0001</span>
+            </div>
+            <div class="ledger-amount" id="inv-amount">$2,125.00</div>
+            <div class="ledger-meta-row">
+              <span>Billing Cycle:</span>
+              <span class="ledger-meta-val">1st of Month</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Currency:</span>
+              <span class="ledger-meta-val" id="inv-currency">USD</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Contractual Basis:</span>
+              <span class="ledger-meta-val">Lease Section 3</span>
+            </div>
+          </div>
+
+          <!-- Payment Card -->
+          <div class="ledger-card">
+            <div class="ledger-header">
+              <span class="ledger-tag purple">2. Tenant Payment</span>
+              <span class="pill" id="pay-id">PAY-0001</span>
+            </div>
+            <div class="ledger-amount" id="pay-amount">$1,900.00</div>
+            <div class="ledger-meta-row">
+              <span>Reference Code:</span>
+              <span class="ledger-meta-val" id="pay-ref">PAYREF-0001</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Remittance Type:</span>
+              <span class="ledger-meta-val">ACH / Portal</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Remittance Match:</span>
+              <span class="ledger-meta-val" id="pay-match">Matched to Bank</span>
+            </div>
+          </div>
+
+          <!-- Bank Clearing Card -->
+          <div class="ledger-card">
+            <div class="ledger-header">
+              <span class="ledger-tag emerald">3. Bank Statement</span>
+              <span class="pill" id="bank-id">BANK-0001</span>
+            </div>
+            <div class="ledger-amount" id="bank-amount" style="color: var(--emerald);">$1,900.00</div>
+            <div class="ledger-meta-row">
+              <span>Wire Reference:</span>
+              <span class="ledger-meta-val" id="bank-ref">PAYREF-0001</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Clearing Status:</span>
+              <span class="ledger-meta-val" style="color: var(--emerald);">Settled Funds</span>
+            </div>
+            <div class="ledger-meta-row">
+              <span>Duplicate Check:</span>
+              <span class="ledger-meta-val" id="bank-dup">Verified Unique</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discrepancy Callout Banner -->
+        <div class="discrepancy-callout partial" id="discrepancy-banner">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div id="discrepancy-text">
+            <strong>Partial Remittance Detected:</strong> Cleared $1,900.00 of $2,125.00 due (Difference: $225.00). Unilateral deduction flagged.
+          </div>
+        </div>
+
+        <!-- Deep Tabs Component -->
+        <div class="tabs-card">
+          <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('tab-briefing', this)">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span>AI Executive Briefing</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('tab-evidence', this)">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>Lease Clauses (RAG)</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('tab-workorders', this)">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span>Work Orders & Repairs (<span id="tab-wo-badge">0</span>)</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('tab-world', this)">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span>World Model & Lineage DAG</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('tab-audit', this)">
+              <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span>Audit JSONL Trace</span>
+            </button>
+          </div>
+
+          <!-- Tab 1: AI Executive Briefing -->
+          <div class="tab-pane active" id="tab-briefing">
+            <div class="briefing-box">
+              <div class="briefing-title">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span>Autonomous Multi-Agent Property Manager Briefing</span>
+              </div>
+              <div class="briefing-narrative" id="briefing-text">
+                Run investigation to generate autonomous synthesis from Meterless Nightshift / NVIDIA Nemotron and deterministic reconciliation agents.
+              </div>
+              <div class="recommendation-alert" id="recommendation-box">
+                <strong>Recommended Action:</strong> <span id="recommendation-text">Awaiting initial investigation trigger.</span>
+              </div>
+            </div>
+
+            <!-- Potential Work Order Withholding Alert -->
+            <div class="wo-alert-box" id="wo-withholding-box" style="display: none;">
+              <svg class="icon" style="stroke: var(--rose); min-width: 20px; height: 20px;" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <div class="wo-alert-text" id="wo-withholding-text"></div>
+            </div>
+
+            <!-- Multi-Agent Execution Pipeline Flow -->
+            <div class="agent-timeline">
+              <div class="agent-step-card">
+                <div class="step-header"><span>1. Finance Agent</span><span class="step-status">100% Exact</span></div>
+                <div>Deterministic Decimal 3-way reconciliation (Zero generative math)</div>
+              </div>
+              <div class="agent-step-card">
+                <div class="step-header"><span>2. Document RAG</span><span class="step-status">pgvector</span></div>
+                <div>HNSW + GIN FTS Reciprocal Rank Fusion on lease & work order clauses</div>
+              </div>
+              <div class="agent-step-card">
+                <div class="step-header"><span>3. Critic Gate</span><span class="step-status">Enforced</span></div>
+                <div>Strict verification of evidence, withholding clauses, and human review gate</div>
+              </div>
+              <div class="agent-step-card">
+                <div class="step-header"><span>4. AI Reasoner</span><span class="step-status" id="step-ai-model">Nemotron</span></div>
+                <div>Meterless Nightshift executive synthesis with contractual clause citations</div>
+              </div>
+              <div class="agent-step-card">
+                <div class="step-header"><span>5. World Model</span><span class="step-status">Appended</span></div>
+                <div>Append-only event sourcing, canonical IDs, and causal lineage graph</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Lease Agreement Clauses (RAG) -->
+          <div class="tab-pane" id="tab-evidence">
+            <div class="evidence-list" id="evidence-container">
+              <div style="color: var(--text-dim); text-align: center; padding: 20px;">Click 'Run Multi-Agent Investigation' to retrieve matching clauses via HNSW vector search.</div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Work Orders & Repair History -->
+          <div class="tab-pane" id="tab-workorders">
+            <div class="evidence-list" id="workorders-container">
+              <div style="color: var(--text-dim); text-align: center; padding: 20px;">Loading maintenance records...</div>
+            </div>
+          </div>
+
+          <!-- Tab 4: World Model & Lineage DAG -->
+          <div class="tab-pane" id="tab-world">
+            <div style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px; font-weight: 700; color: var(--text-heading);">Event-Sourced Case Progression & Lineage DAG</span>
+              <button class="btn" onclick="fetchWorldModel()">Refresh Event Log</button>
+            </div>
+            <div class="event-stream" id="world-events-container">
+              <div style="color: var(--text-dim); text-align: center; padding: 20px;">No events recorded yet.</div>
+            </div>
+            <div style="margin-top: 16px;">
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Derived Latest State JSON (Materialized Projection):</div>
+              <pre class="code-view" id="world-state-json">{}</pre>
+            </div>
+          </div>
+
+          <!-- Tab 5: Audit JSONL Trace -->
+          <div class="tab-pane" id="tab-audit">
+            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-muted);">Append-Only JSONL Execution Trace (<span id="trace-run-id">run_id</span>):</span>
+              <span class="pill" style="color: var(--emerald);">Credentials Redacted</span>
+            </div>
+            <pre class="code-view" id="trace-json-view">No active trace recorded for this run.</pre>
+          </div>
+        </div>
+
+        <!-- Bottom Property Manager Decision & Sign-off Dock -->
+        <div class="manager-dock">
+          <div class="dock-header">
+            <div class="dock-title">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Property Manager Review & Risk Gate Sign-Off</span>
+            </div>
+            <span class="pill rose" style="font-size: 10px;">Zero Auto-Writebacks to Bank</span>
+          </div>
+
+          <div class="dock-form">
+            <input type="text" class="note-input" id="manager-note" placeholder="Enter reason or decision audit note (min 3 chars)...">
+            <button class="btn btn-emerald" onclick="submitDecision(true, 'approved')">
+              <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Approve Reconciliation</span>
+            </button>
+            <button class="btn btn-primary" onclick="submitDecision(false, 'tenant_notice')">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <span>Issue Notice</span>
+            </button>
+            <button class="btn btn-amber" onclick="submitDecision(false, 'escalated')">
+              <svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <span>Escalate</span>
+            </button>
+            <button class="btn btn-rose" onclick="submitDecision(false, 'rejected')">
+              <svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <span>Flag / Reject</span>
+            </button>
+          </div>
+          <div id="decision-result-msg" style="font-size: 11px; color: var(--text-dim);"></div>
+        </div>
+      </section>
+    </div>
+  </div><!-- End #tenant-ar-module -->
+
+
+    <!-- MODULE 2: VENDOR MAINTENANCE AP & RECONCILIATION HUB -->
+    <div id="vendor-ap-module" style="display: none; padding-top: 14px;">
+
+      <!-- Vendor AP KPI Metric Row -->
+      <section class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-accent-bar accent-purple"></div>
+          <div class="kpi-label">
+            <span>Total Maintenance Invoiced</span>
+            <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          </div>
+          <div class="kpi-value" id="kpi-vendor-invoiced" style="color: #c084fc;">$0.00</div>
+          <div class="kpi-sub"><span id="kpi-vendor-inv-count">0</span> PDF Vendor Invoices Indexed</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-accent-bar accent-emerald"></div>
+          <div class="kpi-label">
+            <span>Disbursed Payments</span>
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="kpi-value" id="kpi-vendor-paid" style="color: var(--emerald);">$0.00</div>
+          <div class="kpi-sub">Checks, Cashier Checks & Cards</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-accent-bar accent-cyan"></div>
+          <div class="kpi-label">
+            <span>Bank Cleared Feed</span>
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 10h18M7 15h1m4 0h1m4 0h1M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z"/></svg>
+          </div>
+          <div class="kpi-value" id="kpi-vendor-cleared" style="color: var(--primary);">$0.00</div>
+          <div class="kpi-sub"><span id="kpi-vendor-uncashed-count">0</span> Floating / Uncashed Checks</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-accent-bar accent-rose"></div>
+          <div class="kpi-label">
+            <span>AP Discrepancies</span>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div class="kpi-value" id="kpi-vendor-flags" style="color: var(--rose);">0</div>
+          <div class="kpi-sub">Overbilled & Card Surcharges</div>
+        </div>
+      </section>
+
+      <!-- Vendor Dual-Pane Workspace -->
+      <div class="workspace-grid" style="grid-template-columns: 480px 1fr;">
+
+        <!-- Left Pane: Invoices Directory & Vendor Network -->
+        <aside class="directory-pane">
+          <div class="directory-header">
+            <div class="directory-title">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+              <span>Vendor AP Invoices</span>
+            </div>
+            <span class="pill purple" id="vendor-inv-count-badge">0 Bills</span>
+          </div>
+
+          <!-- Trade / Filter Tabs -->
+          <div style="display: flex; gap: 6px; padding: 10px 14px; overflow-x: auto; border-bottom: 1px solid var(--border-subtle); background: var(--bg-inset);">
+            <button class="preset-chip active" onclick="filterVendorInvoices('all', this)">All Trades</button>
+            <button class="preset-chip" onclick="filterVendorInvoices('Plumbing', this)">Sinks & Faucets</button>
+            <button class="preset-chip" onclick="filterVendorInvoices('Fixtures', this)">Bathtubs & Fixtures</button>
+            <button class="preset-chip" onclick="filterVendorInvoices('Electrical', this)">Lighting</button>
+            <button class="preset-chip" onclick="filterVendorInvoices('HVAC', this)">HVAC</button>
+            <button class="preset-chip" onclick="filterVendorInvoices('Appliance', this)">Appliances</button>
+          </div>
+
+          <!-- Invoices List Container -->
+          <div class="lease-list" id="vendor-invoices-list" style="max-height: 440px; overflow-y: auto;">
+            <div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 12px;">Loading vendor maintenance bills...</div>
+          </div>
+
+          <!-- Connected Vendors Supply Chain Network -->
+          <div style="margin-top: 14px; padding: 14px; background: var(--bg-inset); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                Contracted Vendor Network (6 Suppliers)
+              </span>
+              <span class="pill active" style="font-size: 10px;">Direct Dispatch</span>
+            </div>
+            <div id="vendor-network-chips" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;"></div>
+          </div>
+        </aside>
+
+        <!-- Right Pane: Interactive 4-Way Reconciliation Walkthrough -->
+        <section class="investigation-pane" id="vendor-reconciliation-view">
+          <div class="investigation-header">
+            <div>
+              <div class="inv-case-badge" id="walkthrough-inv-id">SELECT AN INVOICE</div>
+              <h2 style="font-size: 18px; font-weight: 800; color: var(--text-heading); margin-top: 4px;" id="walkthrough-vendor-title">Autonomous 4-Way Bill Reconciliation</h2>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;" id="walkthrough-scope-subtitle">Comparing authorized work order budget vs. vendor PDF extraction vs. payment voucher vs. bank clearing.</div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <a id="btn-view-pdf-link" href="#" target="_blank" class="btn" style="text-decoration: none; display: none;">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>View Authentic PDF</span>
+              </a>
+              <button class="btn btn-emerald" onclick="openPayCurrentInvoiceModal()" id="btn-pay-active-invoice" style="display: none;">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                <span>Disburse Payment</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Discrepancy Status Banner -->
+          <div id="walkthrough-status-banner" class="discrepancy-callout review" style="margin-bottom: 16px;">
+            <div id="walkthrough-status-text">Select any vendor invoice on the left to initiate the autonomous 4-way matching walkthrough.</div>
+          </div>
+
+          <!-- 5-Step Visual Walkthrough Container -->
+          <div class="walkthrough-container" id="walkthrough-steps-container">
+            <div style="padding: 40px; text-align: center; color: var(--text-dim);">
+              <svg class="icon" style="width: 32px; height: 32px; margin-bottom: 8px; opacity: 0.5;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <div>No invoice selected. Click an invoice on the left to walk through the 4-way reconciliation steps.</div>
+            </div>
+          </div>
+
+          <!-- Property Manager Resolution & Action Gate -->
+          <div class="decision-card" id="vendor-decision-card" style="margin-top: 18px; display: none;">
+            <div class="decision-title">Property Manager Review Gate & Resolution Sign-Off</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              Reconciliation findings require explicit Property Manager sign-off. All decisions are immutably logged into the Meterless World Model audit trail.
+            </div>
+            <textarea id="vendor-pm-notes" rows="2" placeholder="Enter resolution notes, vendor credit memo reference, or explanation..." style="width: 100%; padding: 10px; border-radius: var(--radius-sm); margin-top: 10px; font-family: var(--font-sans); font-size: 12px;"></textarea>
+            <div class="decision-actions" style="margin-top: 10px;">
+              <button class="btn btn-emerald" onclick="resolveVendorBill('approved')">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Authorize & Approve Match</span>
+              </button>
+              <button class="btn btn-amber" onclick="resolveVendorBill('dispute_vendor')">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span>Dispute Overbilling with Vendor</span>
+              </button>
+              <button class="btn btn-primary" onclick="resolveVendorBill('reissue_check')">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span>Cancel / Reissue Stale Check</span>
+              </button>
+              <button class="btn btn-rose" onclick="resolveVendorBill('hold_payment')">
+                <svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <span>Hold Payment / Request Audit</span>
+              </button>
+            </div>
+            <div id="vendor-decision-result-msg" style="font-size: 11px; color: var(--text-dim); margin-top: 6px;"></div>
+          </div>
+        </section>
+      </div>
+    </div><!-- End #vendor-ap-module -->
+  </main>
+
+
+  <!-- Integrations & Settings Modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Sponsor Integrations & System Configuration</div>
+        <button class="close-btn" onclick="closeSettingsModal()">&times;</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px; font-size: 13px;">
+        <!-- Zetaris Config -->
+        <div class="kpi-card">
+          <div class="kpi-label"><span>Zetaris SQL Data Federation</span></div>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+            <label style="color: var(--text-muted); font-size: 12px;">Finance Source:
+              <select id="cfg-finance-source" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+                <option value="fixture">PostgreSQL Fixture Ledgers (Offline Demo)</option>
+                <option value="zetaris">Zetaris Live SQL REST Query (/sql-editor/sqls/run)</option>
+              </select>
+            </label>
+            <label style="color: var(--text-muted); font-size: 12px;">Zetaris API Key:
+              <input type="password" id="cfg-zetaris-key" placeholder="Enter Zetaris Bearer Token" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+            </label>
+          </div>
+        </div>
+
+        <!-- Meterless Nightshift / NVIDIA Nemotron Config -->
+        <div class="kpi-card">
+          <div class="kpi-label"><span>Meterless Nightshift / NVIDIA Nemotron AI Reasoner</span></div>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+            <label style="color: var(--text-muted); font-size: 12px;">AI Provider Mode:
+              <select id="cfg-ai-provider" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+                <option value="offline">Offline Deterministic Synthesis (Safe Demo)</option>
+                <option value="meterless">Meterless Nightshift (Live NVIDIA Nemotron lane)</option>
+              </select>
+            </label>
+            <label style="color: var(--text-muted); font-size: 12px;">NVIDIA Nemotron Lane Model ID:
+              <input type="text" id="cfg-meterless-model" value="nvidia/nemotron-4-340b-instruct" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+            </label>
+            <label style="color: var(--text-muted); font-size: 12px;">Meterless Runtime Token:
+              <input type="password" id="cfg-meterless-token" placeholder="Bearer Token for Nightshift" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+            </label>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveSettings()" style="width: 100%; justify-content: center; padding: 12px;">
+          <span>Apply Configuration</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sign New Lease Modal -->
+  <div class="modal-overlay" id="new-lease-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Sign & Ingest New Lease Agreement</div>
+        <button class="close-btn" onclick="closeNewLeaseModal()">&times;</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Lease ID:
+            <input type="text" id="nl-lease-id" value="LEASE-0105" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Unit:
+            <input type="text" id="nl-unit" value="301" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+        <label style="color: var(--text-muted); font-size: 12px;">Tenant Full Name:
+          <input type="text" id="nl-tenant" value="Aria Montgomery" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+        </label>
+        <label style="color: var(--text-muted); font-size: 12px;">Property Address:
+          <input type="text" id="nl-address" value="700 Example Grove Avenue, Unit 301, Berkeley, CA 94704" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Monthly Rent ($):
+            <input type="number" id="nl-rent" value="2400" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Security Deposit ($):
+            <input type="number" id="nl-deposit" value="2500" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+        <label style="color: var(--text-muted); font-size: 12px;">Lease Covenants / Agreement Text:
+          <textarea id="nl-text" rows="4" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px; font-family: var(--font-sans); font-size: 12px;">Residential Lease Agreement. Section 3: Monthly rent due on 1st. Section 11: Tenant shall not deduct repair expenses or withhold rent under any circumstances without landlord authorization.</textarea>
+        </label>
+        <button class="btn btn-emerald" onclick="submitNewLease()" style="width: 100%; justify-content: center; padding: 12px; margin-top: 6px;">
+          <span>Index Lease & Ingest into pgvector RAG</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Work Order Modal -->
+  <div class="modal-overlay" id="new-wo-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Create Maintenance Work Order</div>
+        <button class="close-btn" onclick="closeNewWorkOrderModal()">&times;</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Work Order ID:
+            <input type="text" id="nwo-id" value="WO-0105" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Associated Lease ID:
+            <input type="text" id="nwo-lease-id" value="LEASE-0001" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Category:
+            <select id="nwo-cat" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+              <option value="Plumbing">Plumbing</option>
+              <option value="Electrical">Electrical</option>
+              <option value="HVAC">HVAC</option>
+              <option value="Appliance">Appliance</option>
+              <option value="Roofing">Roofing</option>
+            </select>
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Priority:
+            <select id="nwo-prio" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+              <option value="Low">Low</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="High">High</option>
+              <option value="Emergency">Emergency</option>
+            </select>
+          </label>
+        </div>
+        <label style="color: var(--text-muted); font-size: 12px;">Issue Description:
+          <input type="text" id="nwo-desc" value="Dishwasher pump not draining completely; error code E24." style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Estimated Repair Cost ($):
+            <input type="number" id="nwo-cost" value="225" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Assigned Technician:
+            <input type="text" id="nwo-tech" value="Jordan Wells" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+        <button class="btn btn-amber" onclick="submitNewWorkOrder()" style="width: 100%; justify-content: center; padding: 12px; margin-top: 6px;">
+          <span>Index Work Order & Ingest into pgvector RAG</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate Authentic Vendor PDF Invoice Modal -->
+  <div class="modal-overlay" id="new-vendor-invoice-modal">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>Generate Authentic Vendor PDF Invoice & Index into RAG</span>
+        </div>
+        <button class="close-btn" onclick="closeNewVendorInvoiceModal()">&times;</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Contracted Vendor:
+            <select id="nvi-vendor" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+              <option value="VEND-001">Apex Plumbing & Sinks (Plumbing)</option>
+              <option value="VEND-002">Bay Area Fixtures & Bathtubs (Fixtures)</option>
+              <option value="VEND-003">Lumina Electrical & Lighting (Lighting)</option>
+              <option value="VEND-004">ProClimate HVAC (Heating & Cooling)</option>
+              <option value="VEND-005">AllStar Appliance Solutions (Appliances)</option>
+              <option value="VEND-006">Summit Building Materials (Hardware)</option>
+            </select>
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Associated Work Order:
+            <select id="nvi-wo" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+              <option value="WO-0001">WO-0001: Kitchen sink faucet drip ($189.00 quote)</option>
+              <option value="WO-0002">WO-0002: Master bathroom electrical flickering ($150.00 quote)</option>
+              <option value="WO-0003">WO-0003: Bathtub drainage and enamel repair ($210.00 quote)</option>
+              <option value="WO-0004">WO-0004: HVAC thermostat & furnace filter ($225.00 quote)</option>
+              <option value="WO-0005">WO-0005: Dishwasher drainage pump replacement ($260.00 quote)</option>
+            </select>
+          </label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Property ID:
+            <input type="text" id="nvi-prop" value="PROP-001" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Unit Number:
+            <input type="text" id="nvi-unit" value="Unit 101" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+
+        <!-- Quick Item Presets -->
+        <div>
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Add Supply & Part Presets:</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <button type="button" class="preset-chip" onclick="addInvoicePresetItem('Stainless Undermount Sink & Faucet', 1, 329.00)">+ Sink & Faucet ($329)</button>
+            <button type="button" class="preset-chip" onclick="addInvoicePresetItem('Cast Iron Bathtub & Drain Assembly', 1, 580.00)">+ Bathtub & Drain ($580)</button>
+            <button type="button" class="preset-chip" onclick="addInvoicePresetItem('6-Pack Recessed LED Can Fixtures', 1, 145.00)">+ LED Lights ($145)</button>
+            <button type="button" class="preset-chip" onclick="addInvoicePresetItem('Digital Thermostat & HVAC Relay', 1, 210.00)">+ HVAC Thermostat ($210)</button>
+            <button type="button" class="preset-chip" onclick="addInvoicePresetItem('Licensed Technician Labor Hours', 2, 80.00)">+ Labor 2hrs ($160)</button>
+          </div>
+        </div>
+
+        <!-- Dynamic Line Items List -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Invoice Line Items</span>
+            <button type="button" class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="addInvoiceCustomRow()">+ Add Row</button>
+          </div>
+          <div id="nvi-line-items" style="display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; padding-right: 4px;">
+            <div class="line-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 30px; gap: 6px; align-items: center;">
+              <input type="text" class="li-desc" value="Stainless Pull-Out Kitchen Sink Faucet Assembly" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <input type="number" class="li-qty" value="1" step="0.5" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <input type="number" class="li-price" value="135.00" step="0.01" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <button type="button" onclick="this.parentElement.remove()" style="background: transparent; border: none; color: var(--rose); cursor: pointer; font-size: 16px;">&times;</button>
+            </div>
+            <div class="line-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 30px; gap: 6px; align-items: center;">
+              <input type="text" class="li-desc" value="Licensed Plumber Labor" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <input type="number" class="li-qty" value="2" step="0.5" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <input type="number" class="li-price" value="80.00" step="0.01" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+              <button type="button" onclick="this.parentElement.remove()" style="background: transparent; border: none; color: var(--rose); cursor: pointer; font-size: 16px;">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Tax Rate:
+            <input type="number" id="nvi-tax" value="0.0825" step="0.0001" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Invoice Memo / Terms:
+            <input type="text" id="nvi-notes" value="Maintenance completed under authorized work order." style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+
+        <button class="btn btn-purple" onclick="submitGenerateVendorInvoice()" id="btn-submit-nvi" style="width: 100%; justify-content: center; padding: 12px; margin-top: 4px;">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          <span>Generate Authentic PDF & Index into pgvector RAG</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pay Vendor Invoice Modal -->
+  <div class="modal-overlay" id="pay-bill-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          <span>Disburse Maintenance Vendor Payment</span>
+        </div>
+        <button class="close-btn" onclick="closePayBillModal()">&times;</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <label style="color: var(--text-muted); font-size: 12px;">Vendor Invoice:
+          <input type="text" id="pay-inv-id" readonly style="width: 100%; background: var(--bg-inset); color: #cbd5e1; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px; font-family: var(--font-mono);">
+        </label>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Payment Amount ($):
+            <input type="number" id="pay-amount" step="0.01" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px; font-weight: 700;">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;">Payment Format:
+            <select id="pay-method" onchange="updatePayMethodFields()" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+              <option value="cashiers_check">Cashier's Check (Bank-Issued Guaranteed)</option>
+              <option value="check" selected>Normal Corporate Check (Operating Acct)</option>
+              <option value="credit_card">Corporate Credit Card (Visa/Mastercard)</option>
+              <option value="ach_wire">ACH Direct Deposit / Wire</option>
+            </select>
+          </label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label style="color: var(--text-muted); font-size: 12px;">Reference / Check / Auth #:
+            <input type="text" id="pay-ref" value="CHK-88201" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px; font-family: var(--font-mono);">
+          </label>
+          <label style="color: var(--text-muted); font-size: 12px;" id="pay-extra-label">Issuer Bank / Card Brand:
+            <input type="text" id="pay-extra" value="First Republic Bank" style="width: 100%; background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 8px; border-radius: 6px; margin-top: 4px;">
+          </label>
+        </div>
+
+        <div style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.2); padding: 10px; border-radius: 6px; margin-top: 4px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-heading); font-size: 12px;">
+            <input type="checkbox" id="pay-clearing-sim" checked style="accent-color: var(--primary);">
+            <span>Simulate Bank Statement Presentation Feed</span>
+          </label>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; padding-left: 22px;">
+            Uncheck this box to simulate an <strong>uncashed check / in-flight check</strong> float (useful for demonstrating stale check reconciliation alerts).
+          </div>
+        </div>
+
+        <button class="btn btn-emerald" onclick="submitPayVendorInvoice()" id="btn-submit-pay" style="width: 100%; justify-content: center; padding: 12px; margin-top: 6px;">
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Issue Payment Voucher & Post to Ledger</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <script>
+    // State
+    let currentLeaseId = 'LEASE-0001';
+    let allLeases = [];
+    let currentFilter = 'all';
+    let activeInvestigationData = null;
+
+    // Helpers
+    const el = id => document.getElementById(id);
+    const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const safe = s => String(s || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+    async function api(url, opts = {}) {
+      const res = await fetch(url, opts);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      return data;
+    }
+
+    // =========================================================
+    // Theme Management (Light is Default, Smooth Dark Option)
+    // =========================================================
+    function getTheme() {
+      return document.documentElement.getAttribute('data-theme') || localStorage.getItem('enigma_theme') || 'light';
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      try {
+        localStorage.setItem('enigma_theme', theme);
+      } catch (e) {}
+      updateThemeUI(theme);
+    }
+
+    function toggleTheme() {
+      const current = getTheme();
+      const next = current === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+    }
+
+    function updateThemeUI(theme) {
+      const isDark = theme === 'dark';
+      const sunIcon = el('theme-icon-sun');
+      const moonIcon = el('theme-icon-moon');
+      const label = el('theme-btn-label');
+      if (sunIcon) sunIcon.style.display = isDark ? 'none' : 'inline-block';
+      if (moonIcon) moonIcon.style.display = isDark ? 'inline-block' : 'none';
+      if (label) label.textContent = isDark ? 'Dark' : 'Light';
+    }
+
+    // Initialize App
+    async function init() {
+      updateThemeUI(getTheme());
+      await loadTelemetry();
+      await loadSummary();
+      await loadLeases();
+      selectLease(currentLeaseId);
+    }
+
+    async function loadTelemetry() {
+      try {
+        const h = await api('/health');
+        el('chunk-stat').textContent = `${(h.total_indexed_chunks || 9300).toLocaleString()} Chunks`;
+        el('events-stat').textContent = `${h.world_events_count || 0} Events`;
+        el('data-stat').textContent = h.finance_source === 'zetaris' ? 'Zetaris SQL' : 'PostgreSQL Fixture';
+        el('ai-stat').textContent = h.ai_provider === 'meterless' ? 'NVIDIA Nemotron' : 'Offline Deterministic';
+        el('step-ai-model').textContent = h.ai_provider === 'meterless' ? 'Nemotron' : 'Deterministic';
+      } catch (e) {
+        console.error('Health check failed', e);
+      }
+    }
+
+    async function loadSummary() {
+      try {
+        const s = await api('/api/portfolio/summary');
+        el('kpi-invoiced').textContent = fmtMoney(s.total_rent_invoiced_usd);
+        el('kpi-verified').textContent = fmtMoney(s.total_rent_verified_usd);
+        el('kpi-variance').textContent = fmtMoney(s.total_variance_usd);
+        el('kpi-backlog').textContent = s.pending_review_count;
+        el('kpi-leases-count').textContent = s.total_leases;
+        el('kpi-reconciled-count').textContent = s.reconciled_count;
+        el('kpi-partial-count').textContent = s.partial_count;
+        el('kpi-approved-count').textContent = s.approved_count;
+      } catch (e) {
+        console.error('Summary error', e);
+      }
+    }
+
+    async function loadLeases() {
+      try {
+        allLeases = await api('/api/leases');
+        el('dir-count').textContent = `${allLeases.length} Units`;
+        renderLeaseList();
+      } catch (e) {
+        console.error('Failed to load leases', e);
+      }
+    }
+
+    function renderLeaseList() {
+      const container = el('lease-list-container');
+      const q = el('search-input').value.toLowerCase().trim();
+
+      const filtered = allLeases.filter(item => {
+        if (currentFilter === 'needs_review' && item.reconciliation_status !== 'needs_review') return false;
+        if (currentFilter === 'partial_payment' && item.reconciliation_status !== 'partial_payment') return false;
+        if (currentFilter === 'reconciled' && item.reconciliation_status !== 'reconciled') return false;
+        if (currentFilter === 'approved' && item.approval_state !== 'approved') return false;
+
+        if (q) {
+          const haystack = `${item.lease_id} ${item.tenant1} ${item.address} ${item.unit}`.toLowerCase();
+          return haystack.includes(q);
+        }
+        return true;
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 40px 0;">No matching leases found.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(l => {
+        const isSelected = l.lease_id === currentLeaseId;
+        const statusClass = l.reconciliation_status === 'reconciled' ? 'emerald' : (l.reconciliation_status === 'partial_payment' ? 'amber' : 'rose');
+        const statusLabel = l.reconciliation_status === 'reconciled' ? 'RECONCILED' : (l.reconciliation_status === 'partial_payment' ? 'PARTIAL' : 'REVIEW');
+        const varDiff = (l.difference_cents || 0) / 100;
+        const varText = varDiff > 0 ? `-$${varDiff.toFixed(2)}` : (varDiff < 0 ? `+$${(-varDiff).toFixed(2)}` : '✓ Match');
+        const varClass = varDiff > 0 ? 'neg' : 'zero';
+
+        return `
+          <div class="lease-card ${isSelected ? 'selected' : ''}" onclick="selectLease('${l.lease_id}')">
+            <div class="card-row-top">
+              <span class="lease-id-badge">${safe(l.lease_id)}</span>
+              <span class="pill ${statusClass}" style="font-size: 10px; padding: 2px 6px;">${statusLabel}</span>
+            </div>
+            <div class="card-tenant">${safe(l.tenant1)}</div>
+            <div class="card-address">Unit ${safe(l.unit)} · ${safe(l.address)}</div>
+            <div class="card-footer">
+              <span class="card-rent">${fmtMoney(l.monthly_rent_usd)}/mo</span>
+              <span class="card-variance ${varClass}">${varText}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function setFilter(filt, btn) {
+      currentFilter = filt;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderLeaseList();
+    }
+
+    function filterLeases() {
+      renderLeaseList();
+    }
+
+    async function selectLease(leaseId) {
+      currentLeaseId = leaseId;
+      renderLeaseList();
+
+      try {
+        const bundle = await api(`/api/lease/${leaseId}/details`);
+        renderCaseBundle(bundle);
+        fetchWorldModel();
+      } catch (e) {
+        console.error('Error fetching lease bundle', e);
+      }
+    }
+
+    function renderCaseBundle(data) {
+      const lease = data.lease;
+      const recon = data.reconciliation;
+      const fin = data.financial_records;
+
+      el('active-lease-id').textContent = lease.lease_id;
+      el('active-tenant').textContent = lease.tenant1 + (lease.tenant2 ? ` & ${lease.tenant2}` : '');
+      el('active-address').textContent = `${lease.address}`;
+      el('active-rent').textContent = fmtMoney(lease.monthly_rent_usd);
+      el('active-wo-count').textContent = `${data.work_orders.length} Order${data.work_orders.length !== 1 ? 's' : ''}`;
+      el('tab-wo-badge').textContent = data.work_orders.length;
+
+      // Status Pills
+      const statusPill = el('active-status-pill');
+      statusPill.className = 'pill';
+      if (recon.status === 'reconciled') {
+        statusPill.classList.add('emerald');
+        statusPill.textContent = '100% RECONCILED';
+      } else if (recon.status === 'partial_payment') {
+        statusPill.classList.add('amber');
+        statusPill.textContent = 'PARTIAL PAYMENT';
+      } else {
+        statusPill.classList.add('rose');
+        statusPill.textContent = 'NEEDS REVIEW';
+      }
+
+      // Approval State
+      const appPill = el('active-approval-pill');
+      appPill.className = 'pill';
+      if (data.approval.state === 'approved') {
+        appPill.classList.add('emerald');
+        appPill.textContent = '✓ Approved';
+      } else if (data.approval.state === 'escalated') {
+        appPill.classList.add('amber');
+        appPill.textContent = '⚠ Escalated';
+      } else {
+        appPill.textContent = 'Pending Review';
+      }
+
+      // 3-Way Match Cards
+      const inv = (fin.invoices && fin.invoices[0]) || {};
+      const pay = (fin.payments && fin.payments[0]) || {};
+      const bank = (fin.bank && fin.bank[0]) || {};
+
+      el('inv-id').textContent = inv.id || 'N/A';
+      el('inv-amount').textContent = fmtMoney(inv.amount || lease.monthly_rent_usd);
+      el('inv-currency').textContent = inv.currency || 'USD';
+
+      el('pay-id').textContent = pay.id || 'No Record';
+      el('pay-amount').textContent = fmtMoney(pay.amount || 0);
+      el('pay-ref').textContent = pay.reference || 'Missing Ref';
+      el('pay-match').textContent = (bank.reference && bank.reference === pay.reference) ? 'Verified' : 'Unmatched';
+
+      el('bank-id').textContent = bank.id || 'No Bank Tx';
+      el('bank-amount').textContent = fmtMoney(bank.amount || 0);
+      el('bank-ref').textContent = bank.reference || 'Missing Ref';
+      el('bank-dup').textContent = (fin.bank && fin.bank.length > 1) ? 'Duplicate Item!' : 'Verified Unique';
+      if (fin.bank && fin.bank.length > 1) {
+        el('bank-dup').style.color = 'var(--rose)';
+      } else {
+        el('bank-dup').style.color = 'var(--emerald)';
+      }
+
+      // Discrepancy Callout
+      const banner = el('discrepancy-banner');
+      banner.className = 'discrepancy-callout';
+      if (recon.status === 'reconciled') {
+        banner.classList.add('reconciled');
+        el('discrepancy-text').innerHTML = `<strong>Zero Discrepancy:</strong> 100% matched across billed invoice, tenant payment receipt, and cleared bank statement.`;
+      } else if (recon.status === 'partial_payment') {
+        banner.classList.add('partial');
+        const diff = (recon.difference_cents || 0) / 100;
+        el('discrepancy-text').innerHTML = `<strong>Partial Payment Variance:</strong> Cleared $${((recon.verified_paid_cents||0)/100).toFixed(2)} of $${((recon.invoice_cents||0)/100).toFixed(2)} due (Variance: -$${diff.toFixed(2)}).`;
+      } else {
+        banner.classList.add('review');
+        el('discrepancy-text').innerHTML = `<strong>Ledger Discrepancy:</strong> ${safe(recon.reason || 'Unmatched transactions present on account.')}`;
+      }
+
+      // Render Work Orders Tab
+      renderWorkOrders(data.work_orders);
+
+      // Latest State JSON
+      el('world-state-json').textContent = JSON.stringify(data.latest_state || {}, null, 2);
+    }
+
+    function renderWorkOrders(orders) {
+      const container = el('workorders-container');
+      if (!orders || !orders.length) {
+        container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No maintenance work orders reported for this unit.</div>';
+        return;
+      }
+      container.innerHTML = orders.map(w => `
+        <div class="evidence-card">
+          <div class="evidence-header">
+            <div>
+              <span class="evidence-id">${safe(w.work_order_id)}</span>
+              <span class="pill ${w.priority === 'High' ? 'rose' : 'amber'}" style="margin-left: 6px; font-size: 10px;">${safe(w.priority)} Priority</span>
+              <span class="pill" style="font-size: 10px;">Status: ${safe(w.status)}</span>
+            </div>
+            <span style="font-family: var(--font-mono); font-weight: 700; color: var(--text-heading);">Est: ${fmtMoney(w.estimated_cost_usd)}</span>
+          </div>
+          <div class="evidence-body">
+            <strong>${safe(w.category)}:</strong> ${safe(w.description)}
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+            <span>Reported: ${safe(w.reported_date)}</span> · <span>Technician: ${safe(w.technician || 'Assigned')}</span> · <span>Notes: ${safe(w.technician_notes || 'None')}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function investigateActiveCase() {
+      const btn = el('btn-investigate');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span> <span>Running Multi-Agent Flow...</span>`;
+
+      try {
+        const res = await api('/api/investigate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lease_id: currentLeaseId, question: 'Why is this rent unpaid or discrepant?' })
+        });
+        activeInvestigationData = res;
+
+        // Populate AI briefing
+        el('briefing-text').textContent = res.narrative || res.recommendation;
+        el('recommendation-text').textContent = res.recommendation;
+
+        // Work Order Correlation Callout
+        const woBox = el('wo-withholding-box');
+        if (res.work_order_correlation) {
+          woBox.style.display = 'flex';
+          el('wo-withholding-text').innerHTML = `
+            <strong>Cross-Modal Intelligence Flag:</strong> ${safe(res.work_order_correlation.explanation)}
+          `;
+        } else {
+          woBox.style.display = 'none';
+        }
+
+        // Render retrieved lease evidence
+        if (res.evidence && res.evidence.length) {
+          el('evidence-container').innerHTML = res.evidence.map(e => `
+            <div class="evidence-card">
+              <div class="evidence-header">
+                <div>
+                  <span class="evidence-id">${safe(e.document_id)}</span>
+                  <span style="color: var(--text-muted); margin-left: 8px;">${safe(e.heading)}</span>
+                </div>
+                <span class="evidence-rrf">RRF Score: ${e.rrf_score}</span>
+              </div>
+              <div class="evidence-body">${safe(e.text)}</div>
+            </div>
+          `).join('');
+        }
+
+        // Audit Trace
+        el('trace-run-id').textContent = res.run_id;
+        try {
+          const traceData = await api(`/api/traces/${res.run_id}`);
+          el('trace-json-view').textContent = JSON.stringify(traceData.events, null, 2);
+        } catch (e) {
+          el('trace-json-view').textContent = 'Trace recorded on disk under logs/trace-' + res.run_id + '.jsonl';
+        }
+
+        // Refresh Summary & Details
+        await loadSummary();
+        await selectLease(currentLeaseId);
+
+      } catch (e) {
+        alert('Investigation failed: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span>Run Multi-Agent Investigation</span>`;
+      }
+    }
+
+    async function fetchWorldModel() {
+      try {
+        const events = await api(`/api/world/${currentLeaseId}`);
+        const container = el('world-events-container');
+        if (!events.length) {
+          container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No events in World Model stream.</div>';
+          return;
+        }
+
+        container.innerHTML = events.slice(-10).reverse().map(ev => `
+          <div class="event-row">
+            <div class="event-meta">
+              <span class="event-tag">${safe(ev.canonical_id)}</span>
+              <strong style="color: var(--text-heading);">${safe(ev.event_type)}</strong>
+              <span class="pill" style="font-size: 10px; padding: 2px 6px;">v${ev.version}</span>
+            </div>
+            <div class="event-time">${new Date(ev.created_at).toLocaleTimeString()}</div>
+          </div>
+        `).join('');
+
+        const st = await api(`/api/world/${currentLeaseId}/state`);
+        el('world-state-json').textContent = JSON.stringify(st, null, 2);
+      } catch (e) {
+        console.error('World model fetch error', e);
+      }
+    }
+
+    async function submitDecision(approved, action) {
+      const noteInput = el('manager-note');
+      const note = noteInput.value.trim() || (approved ? 'Reconciled with zero variance.' : 'Flagged for manager investigation.');
+      
+      try {
+        const res = await api(`/api/approve/${currentLeaseId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved, action, note, reviewer: 'Property Manager' })
+        });
+        el('decision-result-msg').textContent = `Decision recorded for ${res.case_id}: [${res.state.toUpperCase()}]. ${res.warning}`;
+        noteInput.value = '';
+        await loadSummary();
+        await selectLease(currentLeaseId);
+      } catch (e) {
+        alert('Approval failed: ' + e.message);
+      }
+    }
+
+    async function runBatch() {
+      const btn = el('btn-batch');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span> <span>Reconciling Portfolio (25)...</span>`;
+
+      try {
+        const res = await api('/api/batch-investigate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 25 })
+        });
+        alert(`Batch reconciliation complete for ${res.batch_count} leases!\nReconciled: ${res.summary.reconciled}\nPartial: ${res.summary.partial}\nNeeds Review: ${res.summary.needs_review}`);
+        await loadSummary();
+        await loadLeases();
+        selectLease(currentLeaseId);
+      } catch (e) {
+        alert('Batch run failed: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Batch Reconcile Portfolio</span>`;
+      }
+    }
+
+    async function seedDatabase() {
+      if (!confirm('Re-seed database with synthetic leases, work orders, and 3-way financial ledgers?')) return;
+      try {
+        const s = await api('/admin/seed', { method: 'POST' });
+        alert(`Successfully seeded ${s.leases} leases and ${s.work_orders} work orders!`);
+        await init();
+      } catch (e) {
+        alert('Seed failed: ' + e.message);
+      }
+    }
+
+    // Tab Switching
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      el(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    // Modal Control
+    function openSettingsModal() {
+      el('settings-modal').classList.add('active');
+    }
+    function closeSettingsModal() {
+      el('settings-modal').classList.remove('active');
+    }
+
+    function openNewLeaseModal() {
+      el('new-lease-modal').classList.add('active');
+    }
+    function closeNewLeaseModal() {
+      el('new-lease-modal').classList.remove('active');
+    }
+
+    async function submitNewLease() {
+      try {
+        const payload = {
+          lease_id: el('nl-lease-id').value.trim(),
+          unit: el('nl-unit').value.trim(),
+          tenant1: el('nl-tenant').value.trim(),
+          address: el('nl-address').value.trim(),
+          monthly_rent_usd: parseFloat(el('nl-rent').value) || 2000,
+          security_deposit_usd: parseFloat(el('nl-deposit').value) || 2000,
+          contract_date: new Date().toISOString().split('T')[0],
+          move_in_date: new Date().toISOString().split('T')[0],
+          lease_text: el('nl-text').value.trim()
+        };
+        const res = await api('/api/leases/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        alert(res.message);
+        closeNewLeaseModal();
+        await loadTelemetry();
+        await loadSummary();
+        await loadLeases();
+        selectLease(res.lease_id);
+      } catch (e) {
+        alert('Failed to ingest lease: ' + e.message);
+      }
+    }
+
+    function openNewWorkOrderModal() {
+      el('nwo-lease-id').value = currentLeaseId;
+      el('new-wo-modal').classList.add('active');
+    }
+    function closeNewWorkOrderModal() {
+      el('new-wo-modal').classList.remove('active');
+    }
+
+    async function submitNewWorkOrder() {
+      try {
+        const payload = {
+          work_order_id: el('nwo-id').value.trim(),
+          lease_id: el('nwo-lease-id').value.trim(),
+          category: el('nwo-cat').value,
+          priority: el('nwo-prio').value,
+          description: el('nwo-desc').value.trim(),
+          estimated_cost_usd: parseFloat(el('nwo-cost').value) || 0,
+          technician: el('nwo-tech').value.trim()
+        };
+        const res = await api('/api/work-orders/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        alert(res.message);
+        closeNewWorkOrderModal();
+        await loadTelemetry();
+        await selectLease(currentLeaseId);
+      } catch (e) {
+        alert('Failed to ingest work order: ' + e.message);
+      }
+    }
+
+    async function saveSettings() {
+      try {
+        const payload = {
+          finance_source: el('cfg-finance-source').value,
+          ai_provider: el('cfg-ai-provider').value,
+          meterless_model: el('cfg-meterless-model').value,
+          meterless_token: el('cfg-meterless-token').value || undefined,
+          zetaris_api_key: el('cfg-zetaris-key').value || undefined
+        };
+        await api('/api/settings/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        alert('Settings updated successfully!');
+        closeSettingsModal();
+        await loadTelemetry();
+      } catch (e) {
+        alert('Failed to update settings: ' + e.message);
+      }
+    }
+
+    // =====================================================================
+    // VENDOR MAINTENANCE AP & RECONCILIATION HUB JAVASCRIPT
+    // =====================================================================
+    let activeHub = 'tenant';
+    let allVendorInvoices = [];
+    let activeVendorInvoiceId = null;
+    let currentVendorTradeFilter = 'all';
+    let registeredVendors = [];
+
+    async function switchHub(hub) {
+      activeHub = hub;
+      const btnTenant = el('btn-hub-tenant');
+      const btnVendor = el('btn-hub-vendor');
+      const tenantModule = el('tenant-ar-module');
+      const vendorModule = el('vendor-ap-module');
+      const vendorActions = el('vendor-hub-header-actions');
+
+      if (hub === 'tenant') {
+        btnTenant.classList.add('active');
+        btnVendor.classList.remove('active', 'purple-hub');
+        tenantModule.style.display = 'block';
+        vendorModule.style.display = 'none';
+        vendorActions.style.display = 'none';
+      } else {
+        btnTenant.classList.remove('active');
+        btnVendor.classList.add('active', 'purple-hub');
+        tenantModule.style.display = 'none';
+        vendorModule.style.display = 'block';
+        vendorActions.style.display = 'flex';
+        await loadVendorHub();
+      }
+    }
+
+    async function loadVendorHub() {
+      try {
+        const [summary, invoices, vendors] = await Promise.all([
+          api('/api/vendor-summary'),
+          api('/api/vendor-invoices'),
+          api('/api/vendors')
+        ]);
+
+        allVendorInvoices = invoices;
+        registeredVendors = vendors;
+
+        // KPI metrics
+        el('kpi-vendor-invoiced').textContent = fmtMoney(summary.total_billed_usd);
+        el('kpi-vendor-inv-count').textContent = summary.total_invoices;
+        el('kpi-vendor-paid').textContent = fmtMoney(summary.total_paid_usd);
+        el('kpi-vendor-cleared').textContent = fmtMoney(summary.total_cleared_usd);
+        el('kpi-vendor-uncashed-count').textContent = summary.flagged_uncashed;
+        el('kpi-vendor-flags').textContent = summary.discrepancy_total;
+        el('vendor-inv-count-badge').textContent = `${invoices.length} Bills`;
+        el('badge-hub-vendor').textContent = `${invoices.length} Bills · ${vendors.length} Vendors`;
+
+        // Render vendor network cards
+        renderVendorNetworkCards(vendors);
+
+        // Render invoices list
+        renderVendorInvoicesList();
+
+        // Auto-select active invoice or first invoice
+        if (!activeVendorInvoiceId && invoices.length > 0) {
+          await selectVendorInvoice(invoices[0].id);
+        } else if (activeVendorInvoiceId) {
+          await selectVendorInvoice(activeVendorInvoiceId);
+        }
+      } catch (e) {
+        console.error('Error loading vendor hub', e);
+      }
+    }
+
+    function renderVendorNetworkCards(vendors) {
+      const container = el('vendor-network-chips');
+      if (!container) return;
+      container.innerHTML = vendors.map(v => {
+        let tradeClass = 'trade-sinks';
+        if (v.trade.includes('Bathtub') || v.trade.includes('Fixtures')) tradeClass = 'trade-bathtubs';
+        else if (v.trade.includes('Light') || v.trade.includes('Electrical')) tradeClass = 'trade-lights';
+        else if (v.trade.includes('HVAC') || v.trade.includes('Heating')) tradeClass = 'trade-hvac';
+        else if (v.trade.includes('Appliance')) tradeClass = 'trade-appliances';
+        else if (v.trade.includes('Material') || v.trade.includes('Hardware')) tradeClass = 'trade-materials';
+
+        return `
+          <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 6px 8px; font-size: 11px; box-shadow: var(--card-shadow);">
+            <div style="font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${safe(v.name)}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px;">
+              <span class="vendor-badge-trade ${tradeClass}">${safe(v.trade.split(',')[0])}</span>
+              <span style="font-size: 10px; color: var(--text-dim);">${safe(v.payment_terms || 'Net 30')}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterVendorInvoices(trade, btn) {
+      currentVendorTradeFilter = trade;
+      if (btn) {
+        btn.parentElement.querySelectorAll('.preset-chip').forEach(b => {
+          b.classList.remove('active');
+          b.style.background = '';
+          b.style.color = '';
+        });
+        btn.classList.add('active');
+      }
+      renderVendorInvoicesList();
+    }
+
+    function renderVendorInvoicesList() {
+      const container = el('vendor-invoices-list');
+      if (!container) return;
+
+      const filtered = allVendorInvoices.filter(inv => {
+        if (currentVendorTradeFilter === 'all') return true;
+        const haystack = `${inv.vendor_trade} ${inv.item_summary}`.toLowerCase();
+        return haystack.includes(currentVendorTradeFilter.toLowerCase());
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--text-dim);">No invoices matching this trade filter.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(inv => {
+        const isSelected = inv.id === activeVendorInvoiceId;
+        let tradeClass = 'trade-sinks';
+        if (inv.vendor_trade.includes('Bathtub') || inv.vendor_trade.includes('Fixtures')) tradeClass = 'trade-bathtubs';
+        else if (inv.vendor_trade.includes('Light') || inv.vendor_trade.includes('Electrical')) tradeClass = 'trade-lights';
+        else if (inv.vendor_trade.includes('HVAC')) tradeClass = 'trade-hvac';
+        else if (inv.vendor_trade.includes('Appliance')) tradeClass = 'trade-appliances';
+        else if (inv.vendor_trade.includes('Material')) tradeClass = 'trade-materials';
+
+        let methodBadge = '';
+        const pm = (inv.payment_method || '').toLowerCase();
+        if (pm === 'cashiers_check') methodBadge = '<span class="badge-method method-cashier">Cashier Check</span>';
+        else if (pm === 'check') methodBadge = '<span class="badge-method method-check">Corporate Check</span>';
+        else if (pm === 'credit_card') methodBadge = '<span class="badge-method method-card">Credit Card</span>';
+        else if (pm === 'ach_wire') methodBadge = '<span class="badge-method method-ach">ACH / Wire</span>';
+        else methodBadge = '<span class="badge-method" style="background: rgba(255,255,255,0.05); color: var(--text-dim);">Unpaid</span>';
+
+        let clearingPill = '<span class="pill emerald" style="font-size: 9px; padding: 1px 5px;">Cleared</span>';
+        if (inv.cleared_amount_usd === 0 && inv.paid_amount_usd > 0) {
+          clearingPill = '<span class="pill amber" style="font-size: 9px; padding: 1px 5px;">Uncashed Float</span>';
+        } else if (inv.paid_amount_usd === 0) {
+          clearingPill = '<span class="pill rose" style="font-size: 9px; padding: 1px 5px;">Pending Pay</span>';
+        }
+
+        return `
+          <div class="vendor-invoice-item ${isSelected ? 'active' : ''}" onclick="selectVendorInvoice('${inv.id}')">
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span class="lease-id-badge" style="font-size: 11px;">${safe(inv.invoice_number || inv.id)}</span>
+                <span class="vendor-badge-trade ${tradeClass}">${safe(inv.vendor_trade.split(',')[0])}</span>
+                ${clearingPill}
+              </div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${safe(inv.vendor_name)}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                ${safe(inv.item_summary)} · Scope: <span style="font-family: var(--font-mono); color: var(--primary); font-weight: 600;">${safe(inv.work_order_id || 'WO-Direct')}</span>
+              </div>
+            </div>
+            <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              <div style="font-family: var(--font-mono); font-size: 15px; font-weight: 800; color: var(--text-heading);">
+                ${fmtMoney(inv.total_usd)}
+              </div>
+              ${methodBadge}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function selectVendorInvoice(invoiceId) {
+      activeVendorInvoiceId = invoiceId;
+      renderVendorInvoicesList();
+
+      const banner = el('walkthrough-status-banner');
+      const statusText = el('walkthrough-status-text');
+      const stepsContainer = el('walkthrough-steps-container');
+      const decCard = el('vendor-decision-card');
+
+      stepsContainer.innerHTML = `
+        <div style="padding: 30px; text-align: center; color: var(--text-dim);">
+          <div class="spinner" style="margin-bottom: 8px;"></div>
+          <div>Executing autonomous 4-way matching across Work Order, PDF Extraction, Payment, and Bank Feed...</div>
+        </div>
+      `;
+
+      try {
+        const data = await api(`/api/vendor-invoices/${invoiceId}/reconcile`, { method: 'POST' });
+
+        el('walkthrough-inv-id').textContent = `${data.invoice_id} · ${data.bundle.invoice.invoice_number}`;
+        el('walkthrough-vendor-title').textContent = `${data.bundle.invoice.vendor.name} — ${data.bundle.invoice.item_summary}`;
+        el('walkthrough-scope-subtitle').textContent = `Work Order ${data.bundle.work_order ? data.bundle.work_order.work_order_id : 'Direct Scope'} · Property ${data.bundle.invoice.property_id} · ${data.bundle.invoice.vendor.trade}`;
+
+        // Buttons
+        const pdfBtn = el('btn-view-pdf-link');
+        pdfBtn.style.display = 'inline-flex';
+        pdfBtn.href = `/api/vendor-invoices/${invoiceId}/pdf`;
+
+        const payBtn = el('btn-pay-active-invoice');
+        payBtn.style.display = 'inline-flex';
+
+        decCard.style.display = 'block';
+
+        // Status Banner
+        banner.className = 'discrepancy-callout';
+        if (data.reason_code === 'MATCH_CONFIRMED') {
+          banner.classList.add('reconciled');
+          statusText.innerHTML = `<strong>100% RECONCILED MATCH:</strong> All 4 financial dimensions (Work Order authorized quote, Vendor PDF line items, payment voucher, and bank statement clearing) match within allowable variance. Zero human exception.`;
+        } else if (data.reason_code === 'OVERBILLING_FLAGGED') {
+          banner.classList.add('review');
+          statusText.innerHTML = `<strong>⚠️ OVERBILLING EXCEPTION DETECTED:</strong> Vendor billed <strong>${fmtMoney(data.billed_cents/100)}</strong>, exceeding authorized Work Order quote (<strong>${fmtMoney(data.quote_cents/100)}</strong>) by <strong>+${fmtMoney(data.variance_cents/100)}</strong> without an approved change order! Recommendation: ${safe(data.action_required)}`;
+        } else if (data.reason_code === 'UNCASHED_CHECK') {
+          banner.classList.add('partial');
+          statusText.innerHTML = `<strong>⚠️ UNCASHED / STALE CHECK DETECTED:</strong> Corporate check voucher has been issued to vendor, but bank presentation has not cleared (>14 days float). Funds remain encumbered. Recommendation: ${safe(data.action_required)}`;
+        } else if (data.reason_code === 'SURCHARGE_VARIANCE') {
+          banner.classList.add('review');
+          statusText.innerHTML = `<strong>⚠️ CREDIT CARD / BANK FEE SURCHARGE DETECTED:</strong> Cleared bank debit (${fmtMoney(data.cleared_cents/100)}) exceeds invoice total (${fmtMoney(data.billed_cents/100)}) due to unauthorized processing fee. Recommendation: ${safe(data.action_required)}`;
+        } else {
+          banner.classList.add('partial');
+          statusText.innerHTML = `<strong>NEEDS REVIEW:</strong> ${safe(data.diagnosis.join(' '))} Recommendation: ${safe(data.action_required)}`;
+        }
+
+        // Render 5 Walkthrough Steps
+        const wo = data.bundle.work_order || {};
+        const inv = data.bundle.invoice || {};
+        const pay = data.bundle.payment || null;
+        const bank = data.bundle.bank_transaction || null;
+
+        const firstEvidence = (data.evidence && data.evidence[0]) ? data.evidence[0].text : '';
+
+        stepsContainer.innerHTML = `
+          <!-- Step 1: Work Order Quote & Scope -->
+          <div class="walkthrough-card">
+            <div class="walkthrough-step-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="step-number-tag ${wo.work_order_id ? 'verified' : 'warning'}">1</div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: var(--text-heading);">Dimension 1: Authorized Work Order Quote & Scope</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Tenant maintenance ticket authorized budget</div>
+                </div>
+              </div>
+              <span class="pill ${wo.work_order_id ? 'emerald' : 'amber'}">${wo.work_order_id ? 'WO-LINKED' : 'DIRECT ORDER'}</span>
+            </div>
+            <div class="dimension-stat-grid">
+              <div><span class="stat-item-label">Work Order ID</span><div class="stat-item-value">${safe(wo.work_order_id || 'WO-DIRECT')}</div></div>
+              <div><span class="stat-item-label">Trade Category</span><div style="font-weight: 600; color: var(--primary);">${safe(wo.category || inv.vendor.trade)}</div></div>
+              <div><span class="stat-item-label">Authorized Quote</span><div style="font-family: var(--font-mono); font-weight: 800; color: var(--emerald);">${fmtMoney(wo.estimated_cost_usd || inv.total_usd)}</div></div>
+              <div><span class="stat-item-label">Assigned Tech</span><div style="color: var(--text-main); font-weight: 500;">${safe(wo.technician || 'Vendor Field Tech')}</div></div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+              <strong>Tenant Issue Scope:</strong> ${safe(wo.description || inv.item_summary)}
+            </div>
+          </div>
+
+          <!-- Step 2: Vendor PDF Invoice (Extracted via RAG) -->
+          <div class="walkthrough-card">
+            <div class="walkthrough-step-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="step-number-tag verified">2</div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: var(--text-heading);">Dimension 2: Vendor PDF Invoice (Extracted via pgvector RAG)</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">${safe(inv.vendor.name)} · Invoice ${safe(inv.invoice_number)}</div>
+                </div>
+              </div>
+              <span class="pill active">PDF PARSED BY RAG</span>
+            </div>
+            <div class="dimension-stat-grid">
+              <div><span class="stat-item-label">Invoice Number</span><div class="stat-item-value">${safe(inv.invoice_number)}</div></div>
+              <div><span class="stat-item-label">Subtotal (Materials/Labor)</span><div class="stat-item-value">${fmtMoney(inv.subtotal_usd)}</div></div>
+              <div><span class="stat-item-label">Sales Tax (8.25%)</span><div class="stat-item-value">${fmtMoney(inv.tax_usd)}</div></div>
+              <div><span class="stat-item-label">Total Billed</span><div style="font-family: var(--font-mono); font-weight: 800; color: var(--purple);">${fmtMoney(inv.total_usd)}</div></div>
+            </div>
+            ${firstEvidence ? `
+              <div class="rag-citation-box">
+                <span style="color: var(--primary); font-weight: 700;">pgvector RAG Chunk Citation:</span><br>
+                ${safe(firstEvidence.slice(0, 240))}...
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Step 3: Property Manager Payment Voucher -->
+          <div class="walkthrough-card">
+            <div class="walkthrough-step-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="step-number-tag ${pay ? 'verified' : 'warning'}">3</div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: var(--text-heading);">Dimension 3: Property Manager Payment Voucher Disbursed</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Accounts Payable ledger disbursement format</div>
+                </div>
+              </div>
+              <span class="pill ${pay ? 'emerald' : 'rose'}">${pay ? pay.payment_method.toUpperCase() : 'UNPAID'}</span>
+            </div>
+            ${pay ? `
+              <div class="dimension-stat-grid">
+                <div><span class="stat-item-label">Payment Format</span><div style="font-weight: 700; color: var(--text-heading);">${safe(pay.payment_method.replace('_', ' ').toUpperCase())}</div></div>
+                <div><span class="stat-item-label">Check / Auth Ref</span><div style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">${safe(pay.reference)}</div></div>
+                <div><span class="stat-item-label">Disbursed Amount</span><div style="font-family: var(--font-mono); font-weight: 800; color: var(--emerald);">${fmtMoney(pay.amount_usd)}</div></div>
+                <div><span class="stat-item-label">Disbursement Date</span><div style="color: var(--text-main); font-weight: 500;">${safe(pay.payment_date)}</div></div>
+              </div>
+            ` : `
+              <div style="padding: 12px; background: rgba(244,63,94,0.06); border: 1px dashed rgba(244,63,94,0.3); border-radius: 8px; font-size: 12px; color: var(--rose); display: flex; justify-content: space-between; align-items: center;">
+                <span>Payment voucher has not yet been issued for this invoice.</span>
+                <button class="btn btn-emerald" style="padding: 4px 10px; font-size: 11px;" onclick="openPayCurrentInvoiceModal()">Pay Now</button>
+              </div>
+            `}
+          </div>
+
+          <!-- Step 4: Bank Statement & Credit Card Feed -->
+          <div class="walkthrough-card">
+            <div class="walkthrough-step-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="step-number-tag ${bank ? 'verified' : (pay ? 'flagged' : 'warning')}">4</div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: var(--text-heading);">Dimension 4: Bank Statement / Card Clearing Feed</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Independent banking ledger presentation & clearing</div>
+                </div>
+              </div>
+              <span class="pill ${bank ? 'emerald' : (pay ? 'amber' : 'rose')}">${bank ? 'CLEARED IN FEED' : (pay ? 'UNCASHED / FLOAT' : 'AWAITING PAYMENT')}</span>
+            </div>
+            ${bank ? `
+              <div class="dimension-stat-grid">
+                <div><span class="stat-item-label">Bank Cleared Amount</span><div class="stat-item-value">${fmtMoney(bank.amount_usd)}</div></div>
+                <div><span class="stat-item-label">Merchant Fee / Surcharge</span><div style="font-family: var(--font-mono); color: ${bank.merchant_fee_usd > 0 ? 'var(--rose)' : 'var(--text-muted)'}; font-weight: 700;">${fmtMoney(bank.merchant_fee_usd)}</div></div>
+                <div><span class="stat-item-label">Cleared Presentation Date</span><div style="color: var(--text-main); font-weight: 500;">${safe(bank.clearing_date)}</div></div>
+                <div><span class="stat-item-label">Bank Trace Reference</span><div style="font-family: var(--font-mono); color: var(--primary); font-weight: 700;">${safe(bank.reference)}</div></div>
+              </div>
+            ` : `
+              <div style="padding: 12px; background: rgba(245,158,11,0.08); border: 1px dashed rgba(245,158,11,0.35); border-radius: 8px; font-size: 12px; color: var(--amber);">
+                ${pay ? `⚠️ Check #${safe(pay.reference)} was disbursed but has not cleared the property manager bank account. Floating unpresented check.` : `No bank transaction present because bill is unpaid.`}
+              </div>
+            `}
+          </div>
+
+          <!-- Step 5: Agent Reconciliation Diagnosis -->
+          <div class="walkthrough-card" style="border: 1px solid rgba(8,145,178,0.3); background: rgba(8,145,178,0.03);">
+            <div class="walkthrough-step-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="step-number-tag ${data.status === 'reconciled' ? 'verified' : 'flagged'}">5</div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: var(--primary);">Dimension 5: Autonomous Multi-Agent Reconciliation Diagnosis</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Deterministic financial audit synthesis</div>
+                </div>
+              </div>
+              <span class="pill ${data.status === 'reconciled' ? 'emerald' : 'rose'}">${safe(data.reason_code)}</span>
+            </div>
+            <div style="font-size: 13px; line-height: 1.6; color: var(--text-main); margin-bottom: 10px;">
+              ${safe(data.narrative)}
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 10px; font-size: 12px;">
+              <div><strong>Action Gate Required:</strong> <span style="color: var(--amber); font-weight: 700;">${safe(data.action_required)}</span></div>
+              <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);">Entity: ${safe(data.canonical_id)}</div>
+            </div>
+          </div>
+        `;
+
+      } catch (e) {
+        stepsContainer.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--rose);">Failed to reconcile vendor invoice: ${safe(e.message)}</div>`;
+      }
+    }
+
+    async function resolveVendorBill(action) {
+      if (!activeVendorInvoiceId) return;
+      const note = el('vendor-pm-notes').value.trim() || `Property manager decision: ${action}`;
+      try {
+        const res = await api(`/api/approve/${activeVendorInvoiceId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            approved: (action === 'approved'),
+            action: action,
+            note: note,
+            reviewer: 'Property Manager'
+          })
+        });
+        el('vendor-decision-result-msg').innerHTML = `<span style="color: var(--emerald);">✓ Decision '${action}' recorded into Meterless World Model audit trail!</span>`;
+        await selectVendorInvoice(activeVendorInvoiceId);
+        await loadVendorHub();
+      } catch (e) {
+        alert('Failed to record decision: ' + e.message);
+      }
+    }
+
+    function openNewVendorInvoiceModal() {
+      el('new-vendor-invoice-modal').classList.add('active');
+    }
+    function closeNewVendorInvoiceModal() {
+      el('new-vendor-invoice-modal').classList.remove('active');
+    }
+
+    function addInvoicePresetItem(desc, qty, price) {
+      const container = el('nvi-line-items');
+      const row = document.createElement('div');
+      row.className = 'line-item-row';
+      row.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr 30px; gap: 6px; align-items: center;';
+      row.innerHTML = `
+        <input type="text" class="li-desc" value="${desc}" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+        <input type="number" class="li-qty" value="${qty}" step="0.5" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+        <input type="number" class="li-price" value="${price.toFixed(2)}" step="0.01" style="background: var(--bg-inset); color: #fff; border: 1px solid var(--border-subtle); padding: 6px 8px; border-radius: 4px; font-size: 12px;">
+        <button type="button" onclick="this.parentElement.remove()" style="background: transparent; border: none; color: var(--rose); cursor: pointer; font-size: 16px;">&times;</button>
+      `;
+      container.appendChild(row);
+    }
+
+    function addInvoiceCustomRow() {
+      addInvoicePresetItem('Additional Fixture / Supply Part', 1, 95.00);
+    }
+
+    async function submitGenerateVendorInvoice() {
+      const btn = el('btn-submit-nvi');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<div class="spinner"></div> Generating PDF & Indexing RAG...';
+      btn.disabled = true;
+
+      try {
+        const rows = document.querySelectorAll('#nvi-line-items .line-item-row');
+        const lineItems = [];
+        rows.forEach(r => {
+          const desc = r.querySelector('.li-desc').value.trim();
+          const qty = parseFloat(r.querySelector('.li-qty').value) || 1;
+          const price = parseFloat(r.querySelector('.li-price').value) || 0;
+          if (desc && price > 0) {
+            lineItems.push({ desc: desc, qty: qty, unit_price: price });
+          }
+        });
+
+        if (!lineItems.length) {
+          alert('Please add at least one line item (e.g. sink, tub, light).');
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+          return;
+        }
+
+        const payload = {
+          vendor_id: el('nvi-vendor').value,
+          work_order_id: el('nvi-wo').value,
+          property_id: el('nvi-prop').value.trim(),
+          unit: el('nvi-unit').value.trim(),
+          line_items: lineItems,
+          tax_rate: parseFloat(el('nvi-tax').value) || 0.0825,
+          notes: el('nvi-notes').value.trim()
+        };
+
+        const res = await api('/api/vendor-invoices/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        alert(`✓ Generated PDF invoice ${res.invoice_number} ($${res.total_usd.toFixed(2)})!\nIndexed ${res.rag_indexing.indexed_chunks} chunks into pgvector.`);
+        closeNewVendorInvoiceModal();
+        await loadVendorHub();
+        await selectVendorInvoice(res.invoice_id);
+      } catch (e) {
+        alert('Failed to generate vendor invoice: ' + e.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function openPayCurrentInvoiceModal() {
+      if (!activeVendorInvoiceId) return;
+      const inv = allVendorInvoices.find(i => i.id === activeVendorInvoiceId);
+      el('pay-inv-id').value = activeVendorInvoiceId + (inv ? ` — ${inv.vendor_name}` : '');
+      el('pay-amount').value = inv ? inv.total_usd : 0;
+      updatePayMethodFields();
+      el('pay-bill-modal').classList.add('active');
+    }
+    function closePayBillModal() {
+      el('pay-bill-modal').classList.remove('active');
+    }
+
+    function updatePayMethodFields() {
+      const m = el('pay-method').value;
+      const ref = el('pay-ref');
+      const extraLabel = el('pay-extra-label');
+      const extra = el('pay-extra');
+
+      if (m === 'cashiers_check') {
+        ref.value = `CASHIER-${Math.floor(100000 + Math.random() * 900000)}`;
+        extraLabel.textContent = 'Issuing Bank / Branch:';
+        extra.value = 'Chase Bank SF Commercial';
+      } else if (m === 'check') {
+        ref.value = `CHK-${Math.floor(10000 + Math.random() * 90000)}`;
+        extraLabel.textContent = 'Account / Memo:';
+        extra.value = 'Operating Acct #9940';
+      } else if (m === 'credit_card') {
+        ref.value = `CC-AUTH-${Math.floor(10000 + Math.random() * 90000)}`;
+        extraLabel.textContent = 'Card Brand / Last 4:';
+        extra.value = 'Visa Corporate ···· 4912';
+      } else if (m === 'ach_wire') {
+        ref.value = `FED-WIRE-${Math.floor(1000000 + Math.random() * 9000000)}`;
+        extraLabel.textContent = 'Routing / Trace:';
+        extra.value = 'Trace #121000358';
+      }
+    }
+
+    async function submitPayVendorInvoice() {
+      if (!activeVendorInvoiceId) return;
+      const btn = el('btn-submit-pay');
+      btn.disabled = true;
+
+      try {
+        const payload = {
+          amount_usd: parseFloat(el('pay-amount').value) || 0,
+          payment_method: el('pay-method').value,
+          reference: el('pay-ref').value.trim(),
+          details: {
+            memo: el('pay-extra').value.trim(),
+            disbursed_by: 'Property Manager'
+          },
+          simulate_bank_clearing: el('pay-clearing-sim').checked
+        };
+
+        const res = await api(`/api/vendor-invoices/${activeVendorInvoiceId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        alert(res.message);
+        closePayBillModal();
+        await loadVendorHub();
+        await selectVendorInvoice(activeVendorInvoiceId);
+      } catch (e) {
+        alert('Failed to pay invoice: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Bootstrap
+    window.addEventListener('DOMContentLoaded', init);
+
+  </script>
+</body>
+</html>

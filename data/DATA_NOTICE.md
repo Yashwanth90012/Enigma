@@ -1,0 +1,1 @@
+SYNTHETIC: demo records only. The 100 generated lease DOCX files retain clauses from a user-supplied template. Verify redistribution rights before publishing these documents in a public hackathon repository. Demo financial records are seeded algorithmically in app/seed.py, not copied from bank statements.
