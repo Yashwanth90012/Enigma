@@ -190,27 +190,38 @@ Status values strictly constrained to: `PASS`, `PARTIAL`, `MISSING`, `BROKEN`, `
 
 ---
 
-### 6. Notification & Workflow Capability
+### 6. Notification & Communication Template Library (Phase 4 Enhanced)
 - **Actual Responsibility:**
-  Persists durable notification records into the `notifications` table, dispatches simulated/live emails, tracks delivery lifecycle (`queued`, `sent`, `simulated`, `failed`), and deduplicates events via unique `event_key`.
+  Persists durable notification records into the `notifications` table, dispatches simulated/live emails, tracks delivery lifecycle (`queued`, `sent`, `simulated`, `failed`), deduplicates events via unique `event_key`, and manages a centralized, persistent library of 42 predefined email templates across rent collection, lease lifecycle, maintenance SLAs, vendor operations, and compliance risks.
 - **Source Files & API Endpoints:**
-  - Source: `app/notifications.py`
+  - Source: `app/notifications.py`, `app/templates.py`, `frontend/src/components/CommunicationTemplatesHub.jsx`
   - Endpoints:
     - `GET /api/notifications`
     - `POST /api/notifications/dispatch`
+    - `GET /api/templates`
+    - `POST /api/templates`
+    - `GET /api/templates/{id}`
+    - `PUT /api/templates/{id}`
+    - `POST /api/templates/{id}/preview`
+    - `POST /api/templates/{id}/send-test`
+    - `GET /api/templates/variables/catalog`
 - **What It Can Successfully Do Today:**
-  - Persists notification audit trail with recipient type (`tenant`, `owner`, `vendor`, `manager`).
-  - Prevents duplicate notification spam for the same event key (e.g. `rent_late:LEASE-0001:2026-10`).
-  - Returns simulated delivery confirmation when external SMTP server is unconfigured, avoiding delivery crashes.
+  - Seeds and maintains all 42 required predefined email templates in PostgreSQL (`communication_templates`, `communication_template_versions`).
+  - Provides a complete template management UI with category filtering, search, variable reference drawer, and live safe preview.
+  - Validates required and supported variables against a standard catalog of 35+ real backend fields with HTML entity escaping to prevent XSS.
+  - Automatically records immutable version audit history whenever templates are edited.
+  - Allows safe test-sends restricted strictly to configured test recipients without emailing residents or vendors.
+  - Enforces multi-tenant isolation, allowing customer organizations to customize templates without altering system defaults.
+  - Persists notification audit trail with template provenance (`template_key`, `context_data`).
 - **Data Source & AI Usage:**
-  PostgreSQL `notifications` table. Zero AI dependency; purely durable event routing.
+  PostgreSQL tables (`communication_templates`, `communication_template_versions`, `notifications`). Deterministic template engine with variable resolution and fallback defaults.
 - **Dependencies & Failure Modes:**
-  - Dependency: PostgreSQL.
-  - Failure Mode: Database offline returns HTTP 500; notification queue retries on next poll.
+  - Dependency: PostgreSQL 16.
+  - Failure Mode: Missing variables fall back gracefully to human-readable descriptors rather than failing or emitting zeroes; missing SMTP credentials automatically preserve queues in simulated delivery state.
 - **Missing Implementation Work:**
   Production SMTP or SendGrid / AWS SES API key configuration for live external email transmission.
 - **Tests Proving Status:**
-  `tests/test_equilibra_agents.py::test_durable_notification_dispatch_and_deduplication`.
+  `tests/test_communication_templates.py` (11/11 passed, 100% pass rate).
 
 ---
 
@@ -239,16 +250,18 @@ Status values strictly constrained to: `PASS`, `PARTIAL`, `MISSING`, `BROKEN`, `
 
 ---
 
-### 8. EQUILIBRA Assistant & Orchestration
+### 8. EQUILIBRA Assistant & Orchestration (Phase 4 Enhanced)
 - **Actual Responsibility:**
-  Interactive property management conversational AI assistant. Interprets natural language queries, invokes authoritative backend tools (lease query, active work orders, verified properties, vendor bills), and synthesizes responses using unified AI provider failover.
+  Interactive property management conversational AI assistant. Interprets natural language queries, invokes authoritative backend tools (lease query, active work orders, verified properties, vendor bills, document citations, templated communication drafting), and synthesizes responses using unified AI provider failover.
 - **Source Files & API Endpoints:**
-  - Source: `app/assistant.py`, `app/providers.py`
+  - Source: `app/assistant.py`, `app/providers.py`, `frontend/src/components/EquilibraAssistant.jsx`
   - Endpoints:
     - `POST /api/assistant/chat`
     - `GET /api/integrations/ai/health`
 - **What It Can Successfully Do Today:**
-  - Routes natural language questions to 4 authoritative tool calls (`query_lease_details`, `query_active_work_orders`, `query_verified_properties`, `query_vendor_invoices`).
+  - Routes natural language questions to 6 authoritative tool calls (`query_lease_details`, `query_active_work_orders`, `query_verified_properties`, `query_vendor_invoices`, `query_supporting_documents`, `prepare_templated_communication`).
+  - Returns structured document reference citations linking users to verified lease/bill documents in the UI.
+  - Drafts verified communication previews using real backend lease, payment, maintenance, and invoice data.
   - Communicates via Unified AI Provider failover sequence: Meterless Nightshift -> NVIDIA NIM -> Offline Deterministic.
   - Exposes provider used, fallback status, and latency.
   - Never executes arbitrary SQL and never mutates bank ledgers without explicit manager approval.

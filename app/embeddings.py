@@ -9,6 +9,7 @@ Provides:
 
 import hashlib
 import re
+import threading
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
@@ -77,7 +78,11 @@ class OfflineDeterministicEmbeddingProvider(BaseEmbeddingProvider):
 
 
 class NvidiaNimEmbeddingProvider(BaseEmbeddingProvider):
-    """Genuine semantic neural embeddings via NVIDIA NIM API."""
+    """Genuine semantic neural embeddings via NVIDIA NIM API with connection pooling and caching."""
+
+    _shared_client: Optional[httpx.Client] = None
+    _vector_cache: Dict[str, List[float]] = {}
+    _cache_lock = threading.Lock()
 
     def __init__(
         self,
@@ -94,6 +99,17 @@ class NvidiaNimEmbeddingProvider(BaseEmbeddingProvider):
         self.base_url = (base_url or getattr(settings, "embedding_base_url", "https://integrate.api.nvidia.com/v1")).rstrip("/")
         self.timeout = timeout
 
+    @classmethod
+    def get_client(cls, timeout: float = 12.0) -> httpx.Client:
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            with cls._cache_lock:
+                if cls._shared_client is None or cls._shared_client.is_closed:
+                    cls._shared_client = httpx.Client(
+                        limits=httpx.Limits(max_connections=15, max_keepalive_connections=10, keepalive_expiry=30.0),
+                        timeout=httpx.Timeout(connect=5.0, read=timeout, write=5.0, pool=5.0)
+                    )
+        return cls._shared_client
+
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
@@ -105,9 +121,18 @@ class NvidiaNimEmbeddingProvider(BaseEmbeddingProvider):
         return bool(self.api_key and self.api_key.startswith("nvapi-"))
 
     def embed_text(self, text: str, input_type: str = "query") -> List[float]:
+        cache_key = f"{self.model}:{self.dimension}:{input_type}:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+        with self._cache_lock:
+            if cache_key in self._vector_cache:
+                return self._vector_cache[cache_key]
+
         vectors = self.embed_batch([text], input_type=input_type)
         if not vectors:
             raise RuntimeError(f"NVIDIA NIM embeddings returned empty response for query")
+        
+        with self._cache_lock:
+            if len(self._vector_cache) < 2000:
+                self._vector_cache[cache_key] = vectors[0]
         return vectors[0]
 
     def embed_batch(self, texts: List[str], input_type: str = "passage") -> List[List[float]]:
@@ -122,8 +147,8 @@ class NvidiaNimEmbeddingProvider(BaseEmbeddingProvider):
             "dimensions": self.dimension
         }
 
-        with httpx.Client(timeout=self.timeout) as client:
-            resp = client.post(url, headers=self._headers(), json=payload)
+        client = self.get_client(timeout=self.timeout)
+        resp = client.post(url, headers=self._headers(), json=payload)
 
         if resp.status_code != 200:
             raise RuntimeError(f"NVIDIA NIM Embedding failed [HTTP {resp.status_code}]: {resp.text[:200]}")

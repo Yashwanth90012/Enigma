@@ -17,7 +17,41 @@ export default function VendorAPModule({
   const [pmNotes, setPmNotes] = useState('');
   const [resolutionMsg, setResolutionMsg] = useState('');
 
+  // 5-Agent Collaborative Pipeline State
+  const [isOrchestratingInvoice, setIsOrchestratingInvoice] = useState(false);
+  const [pipelineResult, setPipelineResult] = useState(null);
+  const [pipelineErr, setPipelineErr] = useState(null);
+
   const fmtMoney = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const handleRunInvoicePipeline = async () => {
+    if (!selectedInvoiceId) return;
+    setIsOrchestratingInvoice(true);
+    setPipelineErr(null);
+    try {
+      const res = await fetch('/api/orchestrator/workflows/invoice-approval', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Organization-Id': 'ORG-APEX'
+        },
+        body: JSON.stringify({
+          invoice_id: selectedInvoiceId,
+          actor_role: 'property_manager'
+        })
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setPipelineResult(data);
+    } catch (err) {
+      setPipelineErr(err.message);
+    } finally {
+      setIsOrchestratingInvoice(false);
+    }
+  };
 
   const invoicesList = Array.isArray(vendorInvoices) ? vendorInvoices : [];
   const vendorsList = Array.isArray(vendors) ? vendors : [];
@@ -311,9 +345,29 @@ export default function VendorAPModule({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {selectedInvoiceId && (
                 <>
+                  <button
+                    className="btn"
+                    style={{ background: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.4)', color: 'var(--text-heading)' }}
+                    onClick={handleRunInvoicePipeline}
+                    disabled={isOrchestratingInvoice}
+                    title="Run 5-agent collaborative verification and approval pipeline"
+                  >
+                    {isOrchestratingInvoice ? (
+                      <>
+                        <span className="spinner"></span>
+                        <span>Orchestrating 5 Agents...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <span>Run 5-Agent Pipeline</span>
+                      </>
+                    )}
+                  </button>
+
                   <a
                     href={`/api/vendor-invoices/${selectedInvoiceId}/pdf`}
                     target="_blank"
@@ -332,6 +386,96 @@ export default function VendorAPModule({
               )}
             </div>
           </div>
+
+          {/* 5-Agent Orchestrated Pipeline Result Panel */}
+          {pipelineErr && (
+            <div className="discrepancy-callout review" style={{ margin: '4px 0' }}>
+              <strong>5-Agent Pipeline Error:</strong> {pipelineErr}
+            </div>
+          )}
+
+          {pipelineResult && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(16, 185, 129, 0.06))',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: 16,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-heading)' }}>
+                    ⚡ 5-Agent Collaborative Invoice Verification DAG
+                  </span>
+                  <span className={`pill ${pipelineResult.status === 'approved' ? 'emerald' : pipelineResult.status === 'rejected' ? 'rose' : 'amber'}`}>
+                    {pipelineResult.status?.toUpperCase()}
+                  </span>
+                  <span className="pill cyan">
+                    Composite Confidence: {Math.round((pipelineResult.composite_confidence || 0.95) * 100)}%
+                  </span>
+                </div>
+                <button
+                  className="btn btn-subtle btn-sm"
+                  onClick={() => setPipelineResult(null)}
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              {/* 5 Steps Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                {(pipelineResult.steps || []).map((step, idx) => (
+                  <div key={idx} style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 6,
+                    padding: '8px 10px',
+                    fontSize: 11
+                  }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-heading)', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Step {idx + 1}: {step.agent}</span>
+                      <span style={{ color: step.outcome === 'Failed' ? 'var(--rose)' : 'var(--emerald)' }}>
+                        {step.outcome === 'Failed' ? '⚠️' : '✓'}
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--text-dim)', marginTop: 2, fontSize: 10 }}>
+                      {step.decision || step.outcome || 'Verified'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Discrepancies if any */}
+              {(pipelineResult.discrepancies || []).length > 0 && (
+                <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 6, padding: '8px 12px', fontSize: 11 }}>
+                  <strong style={{ color: 'var(--rose)' }}>Discrepancies Identified:</strong>
+                  <ul style={{ paddingLeft: 18, marginTop: 4, color: 'var(--text-main)' }}>
+                    {pipelineResult.discrepancies.map((d, dIdx) => (
+                      <li key={dIdx}>{typeof d === 'string' ? d : JSON.stringify(d)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Generated Template-backed Notice Draft */}
+              {pipelineResult.communication_draft && (
+                <div style={{ padding: 10, background: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>
+                    ✉️ GENERATED VENDOR CLARIFICATION NOTICE (COMMUNICATION TEMPLATE)
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-heading)' }}>
+                    {pipelineResult.communication_draft.rendered_subject}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
+                    Recipient: {pipelineResult.communication_draft.recipient}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 4-Way Match Status Callout Banner */}
           {walkthroughData && (

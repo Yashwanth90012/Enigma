@@ -53,6 +53,16 @@ export default function HubSwitcher({
         </button>
 
         <button
+          className={`hub-nav-btn ${activeHub === 'docintel' ? 'active cyan-hub' : ''}`}
+          onClick={() => setActiveHub('docintel')}
+          title="Document Intelligence: OCR extraction, confidence validation, and hybrid RAG retrieval"
+        >
+          <svg className="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>Doc Intelligence</span>
+          <span className="hub-pill cyan">OCR & RAG</span>
+        </button>
+
+        <button
           className={`hub-nav-btn ${activeHub === 'saas' ? 'active roadmap-hub' : ''}`}
           onClick={() => setActiveHub('saas')}
           title="Multi-tenant customer roadmap and feature voting"
@@ -70,6 +80,16 @@ export default function HubSwitcher({
           <svg className="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <span>Compliance & Risk</span>
           <span className="hub-pill amber">Risk Hub</span>
+        </button>
+
+        <button
+          className={`hub-nav-btn ${activeHub === 'templates' ? 'active' : ''}`}
+          onClick={() => setActiveHub('templates')}
+          title="Centralized Communication Template Library across Rent, Leases, Maintenance, Vendors, and Compliance"
+        >
+          <svg className="icon" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span>Communication Templates</span>
+          <span className="hub-pill emerald">42 Templates</span>
         </button>
 
         <button

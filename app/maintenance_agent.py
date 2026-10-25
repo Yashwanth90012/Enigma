@@ -271,3 +271,135 @@ def check_sla_breaches() -> List[Dict[str, Any]]:
             )
             
     return breaches
+
+
+def assess_habitability_and_rent_risk(work_order_id: str, org_id: Optional[str] = None) -> "AgentDecision":
+    """Evaluate whether an open maintenance ticket poses habitability risks or rent withholding defense.
+    
+    Cross-references maintenance ticket priority and category against tenant ledger status.
+    Returns a grounded structured AgentDecision.
+    """
+    from .agent_execution import (
+        AgentDecision, EvidenceReference, EstablishedAgent,
+        DecisionOutcome, ConfidenceLevel, RiskLevel, ExecutionStatus,
+        create_abstention_decision, assert_tenant_access
+    )
+
+    with db() as conn:
+        row = conn.execute(
+            """SELECT wo.work_order_id, wo.lease_id, wo.property_id, wo.category,
+                      wo.description, wo.priority, wo.status, wo.technician,
+                      wo.estimated_cost_usd, wo.reported_date, p.org_id, p.name as property_name
+               FROM work_order_records wo
+               JOIN properties p ON wo.property_id = p.property_id
+               WHERE wo.work_order_id = %s""",
+            (work_order_id,)
+        ).fetchone()
+
+    if not row:
+        return create_abstention_decision(
+            agent_id=EstablishedAgent.MAINTENANCE_SLA.value,
+            case_id=work_order_id,
+            reason=f"Work order '{work_order_id}' not found in database records.",
+            org_id=org_id
+        )
+
+    wo_id, lease_id, prop_id, cat, desc, prio, st, tech, est_cost, rep_date, p_org, prop_name = row
+    assert_tenant_access(p_org, org_id, f"Work order {work_order_id}")
+
+    # Detect habitability keywords
+    desc_lower = (desc or "").lower()
+    cat_lower = (cat or "").lower()
+    habitability_covenants = ["flood", "leak", "sewage", "heat", "hot water", "gas", "sparks", "mold", "pipe"]
+    is_habitability_issue = prio in ("Emergency", "High") or any(k in desc_lower or k in cat_lower for k in habitability_covenants)
+
+    evidence_list: List[EvidenceReference] = [
+        EvidenceReference(
+            entity_type="work_order",
+            entity_id=wo_id,
+            source_table="work_order_records",
+            field_values={
+                "category": cat,
+                "priority": prio,
+                "status": st,
+                "description": desc,
+                "estimated_cost_usd": float(est_cost)
+            },
+            citation=f"Work Order {wo_id} ({cat}, Priority: {prio}): '{desc}'"
+        )
+    ]
+
+    # Cross-reference tenant ledger balance
+    from .engine import fixture_rows, calculate
+    fin = fixture_rows(lease_id)
+    recon = calculate(fin)
+    diff_cents = recon.get("difference_cents") or 0
+    has_unpaid_rent = diff_cents > 0
+
+    if has_unpaid_rent:
+        evidence_list.append(EvidenceReference(
+            entity_type="lease",
+            entity_id=lease_id,
+            source_table="lease_records",
+            field_values={
+                "variance_cents": diff_cents,
+                "reconciliation_status": recon.get("status"),
+                "reason": recon.get("reason")
+            },
+            citation=f"Tenant ledger carries ${diff_cents/100:.2f} unpaid balance ({recon.get('status')})"
+        ))
+
+    if is_habitability_issue and has_unpaid_rent and st not in ("Completed", "Closed"):
+        return AgentDecision(
+            agent_id=EstablishedAgent.MAINTENANCE_SLA.value,
+            case_id=wo_id,
+            decision=DecisionOutcome.ESCALATED.value,
+            confidence=0.91,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=(
+                f"Habitability risk identified: Open {prio} ticket '{desc}' in {cat} coincided with an unpaid rent "
+                f"balance of ${diff_cents/100:.2f}. Under statutory habitability covenants, tenant may assert lawful "
+                f"repair-and-deduct or withholding rights."
+            ),
+            recommended_action="Expedite contractor dispatch immediately; do not issue adverse late notice until repair is verified.",
+            requires_human_approval=True,
+            approval_role="property_manager",
+            risk_level=RiskLevel.CRITICAL if prio == "Emergency" else RiskLevel.HIGH,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=p_org,
+            metadata={"habitability_risk": True, "tenant_withholding_risk": True, "unpaid_rent_usd": diff_cents / 100.0}
+        )
+    elif is_habitability_issue and st not in ("Completed", "Closed"):
+        return AgentDecision(
+            agent_id=EstablishedAgent.MAINTENANCE_SLA.value,
+            case_id=wo_id,
+            decision=DecisionOutcome.ACTION_REQUIRED.value,
+            confidence=0.88,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Habitability impact flagged: {prio} priority ticket ({cat}) requires strict SLA enforcement.",
+            recommended_action=f"Assign certified trade technician ({tech or 'Unassigned'}) within SLA window.",
+            requires_human_approval=False,
+            risk_level=RiskLevel.MEDIUM,
+            execution_status=ExecutionStatus.EXECUTED,
+            org_id=p_org,
+            metadata={"habitability_risk": True, "tenant_withholding_risk": False}
+        )
+    else:
+        return AgentDecision(
+            agent_id=EstablishedAgent.MAINTENANCE_SLA.value,
+            case_id=wo_id,
+            decision=DecisionOutcome.APPROVED.value,
+            confidence=0.94,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Routine maintenance ticket {wo_id} ({cat}, {prio}). No habitability or financial withholding cross-risks detected.",
+            recommended_action="Proceed with scheduled contractor appointment.",
+            requires_human_approval=False,
+            risk_level=RiskLevel.LOW,
+            execution_status=ExecutionStatus.EXECUTED,
+            org_id=p_org,
+            metadata={"habitability_risk": False, "tenant_withholding_risk": False}
+        )
+

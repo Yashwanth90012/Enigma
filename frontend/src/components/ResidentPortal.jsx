@@ -608,10 +608,25 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
             <div className="card" style={{ padding: 20 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>💳 Settle Monthly Rent Remittance</h3>
               {payFeedback && (
-                <div style={{ padding: 12, borderRadius: 6, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--emerald)', marginBottom: 16 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--emerald)' }}>✓ {payFeedback.message}</div>
+                <div style={{
+                  padding: 12,
+                  borderRadius: 6,
+                  background: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched')
+                    ? 'rgba(16, 185, 129, 0.1)'
+                    : 'rgba(245, 158, 11, 0.1)',
+                  border: `1px solid ${(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched') ? 'var(--emerald)' : 'var(--amber)'}`,
+                  marginBottom: 16
+                }}>
+                  <div style={{
+                    fontWeight: 600,
+                    color: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched') ? 'var(--emerald)' : 'var(--amber)'
+                  }}>
+                    {(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched')
+                      ? `✓ Verified Settlement: ${payFeedback.message}`
+                      : `⏳ Payment Submitted (Pending Settlement Verification): ${payFeedback.message}`}
+                  </div>
                   <div style={{ fontSize: 12, marginTop: 4 }}>
-                    Reference: <code>{payFeedback.reference}</code> · New status: <strong>{payFeedback.reconciliation_status}</strong>
+                    Reference: <code>{payFeedback.reference}</code> · Ledger Settlement Status: <strong>{payFeedback.reconciliation_status}</strong>
                   </div>
                 </div>
               )}

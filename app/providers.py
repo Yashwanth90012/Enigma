@@ -1,6 +1,8 @@
 import re
 import uuid
 import time
+import random
+import threading
 import httpx
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -207,12 +209,30 @@ class MeterlessProvider:
 
 
 class NvidiaNimProvider:
-    """Adapter for NVIDIA NIM hosted API or self-hosted container instance."""
+    """Adapter for NVIDIA NIM hosted API or self-hosted container instance with
+
+    connection pooling, bounded backoff on 429/5xx, and prompt compaction.
+    """
+    _shared_client: Optional[httpx.Client] = None
+    _client_lock = threading.Lock()
+
     def __init__(self):
         self.base = (settings.nvidia_nim_base_url or 'https://integrate.api.nvidia.com/v1').rstrip('/')
         self.api_key = settings.nvidia_nim_api_key
         self.model = settings.nvidia_nim_model or 'nvidia/llama-3.1-nemotron-70b-instruct'
         self.timeout = getattr(settings, 'nvidia_nim_timeout_seconds', 60)
+
+    @classmethod
+    def get_client(cls, timeout: float = 60.0) -> httpx.Client:
+        """Reuse connection-pooled HTTP client across inference calls."""
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            with cls._client_lock:
+                if cls._shared_client is None or cls._shared_client.is_closed:
+                    cls._shared_client = httpx.Client(
+                        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=30.0),
+                        timeout=httpx.Timeout(connect=5.0, read=timeout, write=5.0, pool=5.0)
+                    )
+        return cls._shared_client
 
     def is_configured(self) -> bool:
         return bool(self.api_key)
@@ -225,22 +245,34 @@ class NvidiaNimProvider:
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
+        
+        # Compact overly repetitive prompts to save tokens and inference latency
+        if len(user) > 6000:
+            user_content = f"{user[:3500]}\n\n[... truncated for latency ...]\n\n{user[-2000:]}"
+        else:
+            user_content = user
+
         payload = {
             'model': self.model,
             'temperature': 0,
             'messages': [
                 {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user}
+                {'role': 'user', 'content': user_content}
             ]
         }
 
         req_timeout = timeout or self.timeout
-        try:
-            with httpx.Client(timeout=req_timeout) as client:
+        client = self.get_client(timeout=req_timeout)
+        max_retries = 2
+        backoff = 0.5
+
+        for attempt in range(max_retries + 1):
+            try:
                 resp = client.post(
                     f"{self.base}/chat/completions",
                     headers=headers,
-                    json=payload
+                    json=payload,
+                    timeout=req_timeout
                 )
                 if resp.status_code in (401, 403):
                     raise AIAuthError(f"NVIDIA NIM authentication failed with HTTP {resp.status_code}")
@@ -248,6 +280,17 @@ class NvidiaNimProvider:
                     raise AIModelError(f"NVIDIA NIM model '{self.model}' not found on endpoint (HTTP 404)")
                 if resp.status_code == 400 and 'model' in resp.text.lower():
                     raise AIModelError(f"NVIDIA NIM rejected model '{self.model}': {resp.text[:200]}")
+                
+                # Rate limit (429) or transient gateway errors (502, 503, 504) -> Bounded retry with jitter
+                if resp.status_code in (429, 502, 503, 504) and attempt < max_retries:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after and retry_after.isdigit():
+                        sleep_time = min(float(retry_after), 5.0)
+                    else:
+                        sleep_time = backoff * (2 ** attempt) + random.uniform(0.1, 0.3)
+                    time.sleep(sleep_time)
+                    continue
+
                 if resp.status_code >= 500:
                     raise AIServerError(f"NVIDIA NIM server error {resp.status_code}: {resp.text[:200]}")
                 resp.raise_for_status()
@@ -260,10 +303,16 @@ class NvidiaNimProvider:
                 if not content or not str(content).strip():
                     raise AIMalformedOutputError("NVIDIA NIM response returned empty message content")
                 return str(content)
-        except (httpx.ConnectError, httpx.NetworkError) as e:
-            raise AIConnectionError(f"Cannot connect to NVIDIA NIM at {self.base}: {str(e)}") from e
-        except httpx.TimeoutException as e:
-            raise AITimeoutError(f"NVIDIA NIM request timed out after {req_timeout}s") from e
+            except (httpx.ConnectError, httpx.NetworkError) as e:
+                if attempt < max_retries:
+                    time.sleep(backoff + random.uniform(0.1, 0.2))
+                    continue
+                raise AIConnectionError(f"Cannot connect to NVIDIA NIM at {self.base}: {str(e)}") from e
+            except httpx.TimeoutException as e:
+                if attempt < max_retries:
+                    time.sleep(backoff)
+                    continue
+                raise AITimeoutError(f"NVIDIA NIM request timed out after {req_timeout}s") from e
 
     def health_check(self) -> Dict[str, Any]:
         """Perform real verification of NVIDIA NIM reachability and authentication."""

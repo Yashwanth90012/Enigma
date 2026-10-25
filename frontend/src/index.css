@@ -11,10 +11,10 @@
   --bg-inset: #f1f5f9;
   --border-subtle: #e2e8f0;
   --border-strong: #cbd5e1;
-  --border-focus: rgba(8, 145, 178, 0.6);
-  --primary: #0891b2;
-  --primary-glow: rgba(8, 145, 178, 0.2);
-  --primary-dark: #0e7490;
+  --border-focus: rgba(79, 70, 229, 0.6);
+  --primary: #4f46e5;
+  --primary-glow: rgba(79, 70, 229, 0.18);
+  --primary-dark: #4338ca;
   --emerald: #059669;
   --emerald-glow: rgba(5, 150, 105, 0.15);
   --amber: #d97706;
@@ -24,15 +24,17 @@
   --blue: #2563eb;
   --purple: #7c3aed;
   --purple-glow: rgba(124, 58, 237, 0.15);
-  --text-heading: #0f172a;
+  --cyan: #0284c7;
+  --cyan-glow: rgba(2, 132, 199, 0.15);
+  --text-heading: #090d16;
   --text-main: #1e293b;
   --text-muted: #475569;
   --text-dim: #64748b;
-  --brand-title-grad: linear-gradient(135deg, #0f172a 30%, #0891b2 100%);
-  --bg-gradient: radial-gradient(circle at 10% 15%, rgba(8, 145, 178, 0.08) 0%, transparent 40%),
-                 radial-gradient(circle at 90% 85%, rgba(124, 58, 237, 0.06) 0%, transparent 45%);
-  --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
-  --card-shadow-hover: 0 4px 6px rgba(15, 23, 42, 0.04), 0 10px 20px rgba(15, 23, 42, 0.06);
+  --brand-title-grad: linear-gradient(135deg, #090d16 15%, #4f46e5 65%, #0284c7 100%);
+  --bg-gradient: radial-gradient(circle at 10% 15%, rgba(79, 70, 229, 0.07) 0%, transparent 40%),
+                 radial-gradient(circle at 90% 85%, rgba(2, 132, 199, 0.06) 0%, transparent 45%);
+  --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.04);
+  --card-shadow-hover: 0 4px 8px rgba(15, 23, 42, 0.05), 0 12px 24px rgba(15, 23, 42, 0.07);
   --btn-default-bg: #f8fafc;
   --btn-default-color: #1e293b;
   --btn-default-border: #cbd5e1;
@@ -42,18 +44,18 @@
   --pill-color: #334155;
   --hub-container-bg: #f1f5f9;
   --modal-bg: #ffffff;
-  --code-bg: #0f172a;
+  --code-bg: #090d16;
   --code-color: #c7d2fe;
   --scrollbar-track: #f1f5f9;
   --scrollbar-thumb: #cbd5e1;
   --theme-toggle-bg: #f1f5f9;
-  --theme-toggle-color: #0f172a;
+  --theme-toggle-color: #090d16;
   --theme-toggle-border: #cbd5e1;
   --dimension-grid-bg: #f8fafc;
-  --briefing-box-bg: rgba(8, 145, 178, 0.06);
-  --briefing-box-border: rgba(8, 145, 178, 0.25);
+  --briefing-box-bg: rgba(79, 70, 229, 0.05);
+  --briefing-box-border: rgba(79, 70, 229, 0.25);
   --input-bg: #ffffff;
-  --input-color: #0f172a;
+  --input-color: #090d16;
   --input-border: #cbd5e1;
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -63,35 +65,37 @@
 }
 
 [data-theme="dark"] {
-  --bg-base: #070d18;
-  --bg-header: rgba(10, 16, 30, 0.85);
-  --bg-card: rgba(15, 23, 42, 0.75);
-  --bg-card-hover: rgba(22, 34, 61, 0.85);
-  --bg-inset: rgba(9, 14, 27, 0.7);
+  --bg-base: #080c16;
+  --bg-header: rgba(12, 18, 32, 0.88);
+  --bg-card: rgba(16, 24, 40, 0.78);
+  --bg-card-hover: rgba(24, 34, 56, 0.85);
+  --bg-inset: rgba(10, 15, 26, 0.75);
   --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  --border-focus: rgba(6, 182, 212, 0.4);
-  --primary: #06b6d4;
-  --primary-glow: rgba(6, 182, 212, 0.25);
-  --primary-dark: #0891b2;
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-focus: rgba(99, 102, 241, 0.5);
+  --primary: #6366f1;
+  --primary-glow: rgba(99, 102, 241, 0.28);
+  --primary-dark: #4f46e5;
   --emerald: #10b981;
   --emerald-glow: rgba(16, 185, 129, 0.2);
   --amber: #f59e0b;
   --amber-glow: rgba(245, 158, 11, 0.2);
   --rose: #f43f5e;
   --rose-glow: rgba(244, 63, 94, 0.2);
-  --blue: #3b82f6;
-  --purple: #8b5cf6;
-  --purple-glow: rgba(139, 92, 246, 0.2);
+  --blue: #38bdf8;
+  --purple: #a855f7;
+  --purple-glow: rgba(168, 85, 247, 0.22);
+  --cyan: #06b6d4;
+  --cyan-glow: rgba(6, 182, 212, 0.22);
   --text-heading: #ffffff;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
-  --brand-title-grad: linear-gradient(135deg, #ffffff 40%, var(--primary));
-  --bg-gradient: radial-gradient(circle at 10% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
-                 radial-gradient(circle at 90% 85%, rgba(139, 92, 246, 0.07) 0%, transparent 45%);
-  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-  --card-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --brand-title-grad: linear-gradient(135deg, #ffffff 30%, #818cf8 70%, #38bdf8 100%);
+  --bg-gradient: radial-gradient(circle at 10% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 42%),
+                 radial-gradient(circle at 90% 85%, rgba(6, 182, 212, 0.09) 0%, transparent 45%);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --card-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.45);
   --btn-default-bg: rgba(255, 255, 255, 0.05);
   --btn-default-color: #ffffff;
   --btn-default-border: var(--border-subtle);
@@ -99,8 +103,8 @@
   --pill-bg: rgba(255, 255, 255, 0.04);
   --pill-border: var(--border-subtle);
   --pill-color: var(--text-muted);
-  --hub-container-bg: rgba(0, 0, 0, 0.3);
-  --modal-bg: #0f172a;
+  --hub-container-bg: rgba(0, 0, 0, 0.35);
+  --modal-bg: #0d1322;
   --code-bg: var(--bg-inset);
   --code-color: #a5b4fc;
   --scrollbar-track: rgba(0, 0, 0, 0.2);
@@ -109,8 +113,8 @@
   --theme-toggle-color: #f8fafc;
   --theme-toggle-border: var(--border-subtle);
   --dimension-grid-bg: rgba(0, 0, 0, 0.2);
-  --briefing-box-bg: rgba(6, 182, 212, 0.04);
-  --briefing-box-border: rgba(6, 182, 212, 0.2);
+  --briefing-box-bg: rgba(99, 102, 241, 0.05);
+  --briefing-box-border: rgba(99, 102, 241, 0.25);
   --input-bg: var(--bg-inset);
   --input-color: #ffffff;
   --input-border: var(--border-subtle);
@@ -501,6 +505,12 @@ main {
 }
 .hub-nav-btn.active.purple-hub {
   color: var(--purple);
+}
+.hub-nav-btn.active.cyan-hub {
+  color: var(--cyan);
+}
+.hub-nav-btn.active.amber-hub {
+  color: var(--amber);
 }
 .hub-nav-btn.active.roadmap-hub {
   color: #2563eb;

@@ -450,3 +450,160 @@ def get_vendor_reconciliation_summary() -> Dict[str, Any]:
         'discrepancy_total': flagged_overbilling + flagged_uncashed + flagged_surcharges
     }
 
+
+def reconcile_vendor_bill_decision(invoice_id: str, org_id: Optional[str] = None) -> "AgentDecision":
+    """Execute 4-way AP match and return a validated structured AgentDecision.
+    
+    Grounded in:
+    1. Work Order quote and scope
+    2. Vendor invoice details and line items
+    3. Payment voucher record
+    4. Depository bank transaction clearing
+    """
+    from .agent_execution import (
+        AgentDecision, EvidenceReference, EstablishedAgent,
+        DecisionOutcome, ConfidenceLevel, RiskLevel, ExecutionStatus,
+        create_abstention_decision, assert_tenant_access
+    )
+
+    try:
+        bundle = get_vendor_invoice_bundle(invoice_id)
+    except ValueError as e:
+        return create_abstention_decision(
+            agent_id=EstablishedAgent.VENDOR_INVOICE.value,
+            case_id=invoice_id,
+            reason=f"Vendor invoice bundle could not be retrieved: {e}",
+            org_id=org_id,
+            approval_role="financial_controller"
+        )
+
+    inv = bundle["invoice"]
+    wo = bundle["work_order"]
+    pay = bundle["payment"]
+    bank = bundle["bank_transaction"]
+
+    # Tenant boundary enforcement
+    resolved_org = "ORG-APEX"
+    if inv.get("property_id"):
+        with db() as conn:
+            p_org = conn.execute("SELECT org_id FROM properties WHERE property_id = %s", (inv["property_id"],)).fetchone()
+            if p_org and p_org[0]:
+                resolved_org = p_org[0]
+
+    assert_tenant_access(resolved_org, org_id, f"Vendor Invoice {invoice_id}")
+
+    evidence_list: List[EvidenceReference] = [
+        EvidenceReference(
+            entity_type="vendor_invoice",
+            entity_id=invoice_id,
+            source_table="vendor_invoices",
+            field_values={
+                "invoice_number": inv["invoice_number"],
+                "total_usd": inv["total_usd"],
+                "vendor_id": inv["vendor_id"],
+                "status": inv["status"]
+            },
+            citation=f"Invoice #{inv['invoice_number']} for ${inv['total_usd']:.2f} issued by {inv.get('vendor', {}).get('name', 'Vendor')}"
+        )
+    ]
+
+    if wo:
+        evidence_list.append(EvidenceReference(
+            entity_type="work_order",
+            entity_id=wo["work_order_id"],
+            source_table="work_order_records",
+            field_values={
+                "estimated_cost_usd": wo["estimated_cost_usd"],
+                "category": wo["category"],
+                "status": wo["status"]
+            },
+            citation=f"Work Order {wo['work_order_id']} quote: ${wo['estimated_cost_usd']:.2f} ({wo['category']})"
+        ))
+
+    if pay:
+        evidence_list.append(EvidenceReference(
+            entity_type="vendor_payment",
+            entity_id=str(pay.get("payment_id") or pay.get("id") or "payment-voucher"),
+            source_table="vendor_payments",
+            field_values={
+                "amount_usd": pay["amount_usd"],
+                "payment_method": pay["payment_method"],
+                "reference": pay["reference"],
+                "status": pay["status"]
+            },
+            citation=f"Payment voucher {pay['reference']}: ${pay['amount_usd']:.2f} via {pay['payment_method']}"
+        ))
+
+    if bank:
+        evidence_list.append(EvidenceReference(
+            entity_type="vendor_bank_transaction",
+            entity_id=str(bank.get("bank_tx_id") or bank.get("id") or "bank-clearing"),
+            source_table="vendor_bank_transactions",
+            field_values={
+                "amount_usd": bank["amount_usd"],
+                "merchant_fee_usd": bank.get("merchant_fee_usd", 0.0),
+                "clearing_date": bank.get("clearing_date"),
+                "status": bank["status"]
+            },
+            citation=f"Bank clearing debit: ${bank['amount_usd']:.2f} cleared on {bank.get('clearing_date')}"
+        ))
+
+    recon = reconcile_vendor_bill(invoice_id)
+    rc = recon["reason_code"]
+    diagnosis_text = "; ".join(recon.get("diagnosis", []))
+
+    if rc == "MATCH_CONFIRMED":
+        # Consequential check: invoices over $1,000 require human manager authorization
+        high_value = inv["total_usd"] >= 1000.00
+        return AgentDecision(
+            agent_id=EstablishedAgent.VENDOR_INVOICE.value,
+            case_id=invoice_id,
+            decision=DecisionOutcome.MATCH_CONFIRMED.value,
+            confidence=0.96,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"4-way match 100% verified: {diagnosis_text}",
+            recommended_action="Execute payment disbursement." if not high_value else "Route high-value payment (>= $1,000) for manager sign-off.",
+            requires_human_approval=high_value,
+            approval_role="financial_controller" if high_value else None,
+            risk_level=RiskLevel.LOW,
+            execution_status=ExecutionStatus.EXECUTED if not high_value else ExecutionStatus.RECOMMENDED,
+            org_id=resolved_org,
+            metadata={"reason_code": rc, "steps": recon.get("steps", [])}
+        )
+    elif rc in ("OVERBILLING_FLAGGED", "SURCHARGE_VARIANCE", "PAYMENT_AMOUNT_MISMATCH"):
+        return AgentDecision(
+            agent_id=EstablishedAgent.VENDOR_INVOICE.value,
+            case_id=invoice_id,
+            decision=DecisionOutcome.DISCREPANCY_FLAGGED.value,
+            confidence=0.92,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Accounts payable variance detected ({rc}): {diagnosis_text}",
+            recommended_action=recon.get("action_required", "Dispute variance with vendor prior to settlement."),
+            requires_human_approval=True,
+            approval_role="financial_controller",
+            risk_level=RiskLevel.HIGH,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=resolved_org,
+            metadata={"reason_code": rc, "steps": recon.get("steps", [])}
+        )
+    else:
+        return AgentDecision(
+            agent_id=EstablishedAgent.VENDOR_INVOICE.value,
+            case_id=invoice_id,
+            decision=DecisionOutcome.NEEDS_REVIEW.value,
+            confidence=0.82,
+            confidence_level=ConfidenceLevel.MEDIUM,
+            evidence=evidence_list,
+            rationale=f"Review required ({rc}): {diagnosis_text}",
+            recommended_action=recon.get("action_required", "Review voucher clearing and settlement status."),
+            requires_human_approval=True,
+            approval_role="property_manager",
+            risk_level=RiskLevel.MEDIUM,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=resolved_org,
+            metadata={"reason_code": rc, "steps": recon.get("steps", [])}
+        )
+
+

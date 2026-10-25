@@ -1,22 +1,90 @@
 import hashlib
 import re
+import queue
+import threading
+from typing import Optional
 from contextlib import contextmanager
 # pyrefly: ignore[missing-import]
 import psycopg
 # pyrefly: ignore[missing-import]
 from pgvector.psycopg import register_vector
 from .config import settings
+from .timing import perf_tracker
+
+
+class SimpleConnectionPool:
+    """Thread-safe PostgreSQL connection pool avoiding raw TCP re-connection overhead."""
+
+    def __init__(self, dsn: str, max_connections: int = 15):
+        self.dsn = dsn
+        self.max_connections = max_connections
+        self._pool = queue.Queue(maxsize=max_connections)
+        self._created = 0
+        self._lock = threading.Lock()
+
+    def get_conn(self) -> psycopg.Connection:
+        try:
+            conn = self._pool.get_nowait()
+            if conn.closed:
+                conn = self._create_conn()
+            return conn
+        except queue.Empty:
+            with self._lock:
+                if self._created < self.max_connections:
+                    self._created += 1
+                    return self._create_conn()
+            # Wait up to 10 seconds for an active connection to return
+            return self._pool.get(timeout=10.0)
+
+    def return_conn(self, conn: psycopg.Connection):
+        if conn and not conn.closed:
+            try:
+                conn.rollback()  # reset clean transaction state
+                self._pool.put_nowait(conn)
+            except (queue.Full, Exception):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                with self._lock:
+                    self._created = max(0, self._created - 1)
+        else:
+            with self._lock:
+                self._created = max(0, self._created - 1)
+
+    def _create_conn(self) -> psycopg.Connection:
+        conn = psycopg.connect(self.dsn, autocommit=False)
+        try:
+            register_vector(conn)
+        except Exception:
+            pass
+        return conn
+
+
+_pool_instance: Optional[SimpleConnectionPool] = None
+_pool_lock = threading.Lock()
+
+def get_pool() -> SimpleConnectionPool:
+    global _pool_instance
+    if _pool_instance is None:
+        with _pool_lock:
+            if _pool_instance is None:
+                _pool_instance = SimpleConnectionPool(settings.database_url, max_connections=15)
+    return _pool_instance
 
 @contextmanager
 def db():
-    with psycopg.connect(settings.database_url, autocommit=False) as conn:
+    pool = get_pool()
+    with perf_tracker.time_stage("db_query"):
+        conn = pool.get_conn()
         try:
-            register_vector(conn)
-        except psycopg.ProgrammingError:
-            # First connection may precede CREATE EXTENSION vector.
-            pass
-        yield conn
-        conn.commit()
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.return_conn(conn)
 
 def init_database():
     with db() as conn:
@@ -463,6 +531,82 @@ def init_database():
         conn.execute('CREATE INDEX IF NOT EXISTS ah_case ON approval_history(case_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS ah_reviewer ON approval_history(reviewer)')
         conn.execute('CREATE INDEX IF NOT EXISTS ah_org ON approval_history(org_id)')
+
+        # 3. Agent Execution & Idempotency Logs
+        conn.execute('''CREATE TABLE IF NOT EXISTS agent_execution_logs (
+            id BIGSERIAL PRIMARY KEY,
+            idempotency_key TEXT UNIQUE NOT NULL,
+            agent_id TEXT NOT NULL,
+            case_id TEXT NOT NULL,
+            action_name TEXT NOT NULL,
+            org_id TEXT,
+            decision JSONB NOT NULL,
+            status TEXT NOT NULL,
+            latency_ms NUMERIC(10,2),
+            executed_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS ael_key ON agent_execution_logs(idempotency_key)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ael_agent ON agent_execution_logs(agent_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ael_case ON agent_execution_logs(case_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ael_org ON agent_execution_logs(org_id)')
+
+        # Phase 5 High-Impact Targeted Query Optimization Indexes
+        conn.execute('CREATE INDEX IF NOT EXISTS doc_prop ON documents(property_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS doc_lease ON documents(lease_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS doc_kind ON documents(kind)')
+        conn.execute('CREATE INDEX IF NOT EXISTS doc_created ON documents(created_at DESC)')
+        conn.execute('CREATE INDEX IF NOT EXISTS vi_status ON vendor_invoices(status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS wo_status ON work_order_records(status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS wo_priority ON work_order_records(priority)')
+        conn.execute('CREATE INDEX IF NOT EXISTS rf_status_sev ON risk_findings(status, severity)')
+        conn.execute('CREATE INDEX IF NOT EXISTS tmpl_category ON communication_templates(category)')
+        conn.execute('CREATE INDEX IF NOT EXISTS lr_prop ON lease_records(property_id)')
+
+        # Phase 6 Dynamic Orchestration & Recoverable Execution Tables
+        conn.execute('''CREATE TABLE IF NOT EXISTS orchestration_workflows (
+            workflow_id TEXT PRIMARY KEY,
+            org_id TEXT NOT NULL,
+            workflow_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            initiating_request JSONB NOT NULL DEFAULT '{}',
+            current_state TEXT NOT NULL DEFAULT 'created',
+            plan_revision INT NOT NULL DEFAULT 1,
+            plan_dag JSONB NOT NULL DEFAULT '[]',
+            context_data JSONB NOT NULL DEFAULT '{}',
+            approval_requirements JSONB,
+            approval_status JSONB,
+            verification_results JSONB,
+            error_details JSONB,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            completed_at TIMESTAMPTZ
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS ow_org_state ON orchestration_workflows(org_id, current_state)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ow_type_target ON orchestration_workflows(workflow_type, target_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ow_created ON orchestration_workflows(created_at DESC)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS orchestration_steps (
+            step_id TEXT PRIMARY KEY,
+            workflow_id TEXT NOT NULL REFERENCES orchestration_workflows(workflow_id) ON DELETE CASCADE,
+            plan_revision INT NOT NULL DEFAULT 1,
+            agent_id TEXT NOT NULL,
+            operation_name TEXT NOT NULL,
+            execution_order INT NOT NULL DEFAULT 1,
+            dependencies JSONB NOT NULL DEFAULT '[]',
+            state TEXT NOT NULL DEFAULT 'planned',
+            inputs JSONB NOT NULL DEFAULT '{}',
+            outputs JSONB,
+            evidence JSONB DEFAULT '[]',
+            attempt_count INT NOT NULL DEFAULT 0,
+            max_retries INT NOT NULL DEFAULT 2,
+            duration_ms NUMERIC(10,2),
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            completed_at TIMESTAMPTZ
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS os_wf_state ON orchestration_steps(workflow_id, state)')
+        conn.execute('CREATE INDEX IF NOT EXISTS os_agent ON orchestration_steps(agent_id)')
 
 def simple_embedding(text: str):
     """Deterministic hashed lexical vector; OFFLINE DEMO ONLY, not a semantic model."""

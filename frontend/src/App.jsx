@@ -1,26 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Header from './components/Header';
 import HubSwitcher from './components/HubSwitcher';
 import TenantARModule from './components/TenantARModule';
 import VendorAPModule from './components/VendorAPModule';
-import CustomerRequirementsPortal from './components/CustomerRequirementsPortal';
-import PublicListingsPortal from './components/PublicListingsPortal';
-import ResidentPortal from './components/ResidentPortal';
-import AdminDiagnosticsPortal from './components/AdminDiagnosticsPortal';
-import ComplianceRiskHub from './components/ComplianceRiskHub';
+import OperationalDashboardOverview from './components/OperationalDashboardOverview';
 import EquilibraAssistant from './components/EquilibraAssistant';
+import { cachedFetch } from './apiCache';
 
-// Modals
-import OnboardCustomerModal from './components/Modals/OnboardCustomerModal';
-import SubmitRequirementModal from './components/Modals/SubmitRequirementModal';
-import NewLeaseModal from './components/Modals/NewLeaseModal';
-import NewWorkOrderModal from './components/Modals/NewWorkOrderModal';
-import NewVendorInvoiceModal from './components/Modals/NewVendorInvoiceModal';
-import PayBillModal from './components/Modals/PayBillModal';
-import SettingsModal from './components/Modals/SettingsModal';
-import InvestigationResultModal from './components/Modals/InvestigationResultModal';
-import BookTourModal from './components/Modals/BookTourModal';
-import RentalApplicationModal from './components/Modals/RentalApplicationModal';
+// Lazy-loaded secondary hubs & portals
+const CustomerRequirementsPortal = lazy(() => import('./components/CustomerRequirementsPortal'));
+const PublicListingsPortal = lazy(() => import('./components/PublicListingsPortal'));
+const ResidentPortal = lazy(() => import('./components/ResidentPortal'));
+const AdminDiagnosticsPortal = lazy(() => import('./components/AdminDiagnosticsPortal'));
+const ComplianceRiskHub = lazy(() => import('./components/ComplianceRiskHub'));
+const CommunicationTemplatesHub = lazy(() => import('./components/CommunicationTemplatesHub'));
+const DocumentIntelligenceHub = lazy(() => import('./components/DocumentIntelligenceHub'));
+
+// Lazy-loaded modals
+const OnboardCustomerModal = lazy(() => import('./components/Modals/OnboardCustomerModal'));
+const SubmitRequirementModal = lazy(() => import('./components/Modals/SubmitRequirementModal'));
+const NewLeaseModal = lazy(() => import('./components/Modals/NewLeaseModal'));
+const NewWorkOrderModal = lazy(() => import('./components/Modals/NewWorkOrderModal'));
+const NewVendorInvoiceModal = lazy(() => import('./components/Modals/NewVendorInvoiceModal'));
+const PayBillModal = lazy(() => import('./components/Modals/PayBillModal'));
+const SettingsModal = lazy(() => import('./components/Modals/SettingsModal'));
+const InvestigationResultModal = lazy(() => import('./components/Modals/InvestigationResultModal'));
+const BookTourModal = lazy(() => import('./components/Modals/BookTourModal'));
+const RentalApplicationModal = lazy(() => import('./components/Modals/RentalApplicationModal'));
 
 export default function App() {
   // Theme System (Default is Light)
@@ -101,9 +107,9 @@ export default function App() {
     meterless_token: ''
   });
 
-  // Helper fetcher
+  // Helper fetcher with deduplication and caching
   const api = async (url, opts = {}) => {
-    const res = await fetch(url, opts);
+    const res = await cachedFetch(url, opts);
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
     return data;
@@ -447,151 +453,192 @@ export default function App() {
           telemetry={telemetry}
         />
 
-        {/* Multi-Agent Operations Hubs */}
-        {activeHub === 'public' && (
-          <PublicListingsPortal
-            onOpenTourModal={(p) => {
-              setTourTargetProperty(p);
-              setIsTourModalOpen(true);
-            }}
-            onOpenApplyModal={(p) => {
-              setApplyTargetProperty(p);
-              setIsApplyModalOpen(true);
-            }}
-          />
-        )}
+        {/* Multi-Agent Operations Hubs wrapped in Suspense */}
+        <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading operational module...</div>}>
+          {activeHub === 'public' && (
+            <PublicListingsPortal
+              onOpenTourModal={(p) => {
+                setTourTargetProperty(p);
+                setIsTourModalOpen(true);
+              }}
+              onOpenApplyModal={(p) => {
+                setApplyTargetProperty(p);
+                setIsApplyModalOpen(true);
+              }}
+            />
+          )}
 
-        {activeHub === 'resident' && (
-          <ResidentPortal
-            onOpenPayModal={() => setIsPayModalOpen(true)}
-            currentOrgId={currentOrgId}
-          />
-        )}
+          {activeHub === 'resident' && (
+            <ResidentPortal
+              onOpenPayModal={() => setIsPayModalOpen(true)}
+              currentOrgId={currentOrgId}
+            />
+          )}
 
-        {activeHub === 'tenant' && (
-          <TenantARModule
-            summary={summary}
-            leases={leases}
-            selectedLease={leases.find((l) => l.lease_id === selectedLeaseId)}
-            activeCaseData={activeCaseData}
-            isInvestigating={isInvestigating}
-            onSelectLease={handleSelectLease}
-            onInvestigateCase={handleInvestigateCase}
-            onSubmitDecision={handleSubmitDecision}
-            onRefreshWorldModel={handleRefreshWorldModel}
-            onOpenInvestigationModal={() => setIsInvestigationModalOpen(true)}
-            hasInvestigationResult={Boolean(investigationResult)}
-          />
-        )}
+          {activeHub === 'tenant' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <OperationalDashboardOverview currentOrgId={currentOrgId} />
+              <TenantARModule
+                summary={summary}
+                leases={leases}
+                selectedLease={leases.find((l) => l.lease_id === selectedLeaseId)}
+                activeCaseData={activeCaseData}
+                isInvestigating={isInvestigating}
+                onSelectLease={handleSelectLease}
+                onInvestigateCase={handleInvestigateCase}
+                onSubmitDecision={handleSubmitDecision}
+                onRefreshWorldModel={handleRefreshWorldModel}
+                onOpenInvestigationModal={() => setIsInvestigationModalOpen(true)}
+                hasInvestigationResult={Boolean(investigationResult)}
+              />
+            </div>
+          )}
 
-        {activeHub === 'vendor' && (
-          <VendorAPModule
-            vendorSummary={vendorSummary}
-            vendorInvoices={vendorInvoices}
-            vendors={vendors}
-            selectedInvoiceId={selectedInvoiceId}
-            walkthroughData={walkthroughData}
-            isLoadingWalkthrough={isLoadingWalkthrough}
-            onSelectInvoice={handleSelectInvoice}
-            onOpenPayModal={(invId) => {
-              setPayTargetInvoiceId(invId);
-              setIsPayModalOpen(true);
-            }}
-            onResolveVendorBill={handleResolveVendorBill}
-          />
-        )}
+          {activeHub === 'vendor' && (
+            <VendorAPModule
+              vendorSummary={vendorSummary}
+              vendorInvoices={vendorInvoices}
+              vendors={vendors}
+              selectedInvoiceId={selectedInvoiceId}
+              walkthroughData={walkthroughData}
+              isLoadingWalkthrough={isLoadingWalkthrough}
+              onSelectInvoice={handleSelectInvoice}
+              onOpenPayModal={(invId) => {
+                setPayTargetInvoiceId(invId);
+                setIsPayModalOpen(true);
+              }}
+              onResolveVendorBill={handleResolveVendorBill}
+            />
+          )}
 
-        {activeHub === 'saas' && (
-          <CustomerRequirementsPortal
-            requirements={requirements}
-            organizations={organizations}
-            onOpenSubmitRequirementModal={() => setIsSubmitReqModalOpen(true)}
-            onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
-            onUpvoteRequirement={handleUpvoteRequirement}
-          />
-        )}
+          {activeHub === 'docintel' && (
+            <DocumentIntelligenceHub
+              currentOrgId={currentOrgId}
+              onSelectLease={(leaseId) => {
+                setActiveHub('tenant');
+                handleSelectLease(leaseId);
+              }}
+            />
+          )}
 
-        {activeHub === 'compliance' && (
-          <ComplianceRiskHub currentOrgId={currentOrgId} />
-        )}
+          {activeHub === 'saas' && (
+            <CustomerRequirementsPortal
+              requirements={requirements}
+              organizations={organizations}
+              onOpenSubmitRequirementModal={() => setIsSubmitReqModalOpen(true)}
+              onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
+              onUpvoteRequirement={handleUpvoteRequirement}
+            />
+          )}
 
-        {activeHub === 'admin' && (
-          <AdminDiagnosticsPortal />
-        )}
+          {activeHub === 'compliance' && (
+            <ComplianceRiskHub currentOrgId={currentOrgId} />
+          )}
+
+          {activeHub === 'templates' && (
+            <CommunicationTemplatesHub currentOrgId={currentOrgId} />
+          )}
+
+          {activeHub === 'admin' && (
+            <AdminDiagnosticsPortal />
+          )}
+        </Suspense>
       </main>
 
-      {/* Global SaaS Modals */}
-      <OnboardCustomerModal
-        isOpen={isOnboardModalOpen}
-        onClose={() => setIsOnboardModalOpen(false)}
-        onOnboardCustomer={handleOnboardCustomer}
-      />
+      {/* Global SaaS Modals wrapped in Suspense */}
+      <Suspense fallback={null}>
+        {isOnboardModalOpen && (
+          <OnboardCustomerModal
+            isOpen={isOnboardModalOpen}
+            onClose={() => setIsOnboardModalOpen(false)}
+            onOnboardCustomer={handleOnboardCustomer}
+          />
+        )}
 
-      <SubmitRequirementModal
-        isOpen={isSubmitReqModalOpen}
-        onClose={() => setIsSubmitReqModalOpen(false)}
-        organizations={organizations}
-        currentOrgId={currentOrgId}
-        onSubmitRequirement={handleSubmitRequirement}
-      />
+        {isSubmitReqModalOpen && (
+          <SubmitRequirementModal
+            isOpen={isSubmitReqModalOpen}
+            onClose={() => setIsSubmitReqModalOpen(false)}
+            organizations={organizations}
+            currentOrgId={currentOrgId}
+            onSubmitRequirement={handleSubmitRequirement}
+          />
+        )}
 
-      <NewLeaseModal
-        isOpen={isLeaseModalOpen}
-        onClose={() => setIsLeaseModalOpen(false)}
-        onIngestLease={handleIngestLease}
-      />
+        {isLeaseModalOpen && (
+          <NewLeaseModal
+            isOpen={isLeaseModalOpen}
+            onClose={() => setIsLeaseModalOpen(false)}
+            onIngestLease={handleIngestLease}
+          />
+        )}
 
-      <NewWorkOrderModal
-        isOpen={isWorkOrderModalOpen}
-        onClose={() => setIsWorkOrderModalOpen(false)}
-        currentLeaseId={selectedLeaseId}
-        onIngestWorkOrder={handleIngestWorkOrder}
-      />
+        {isWorkOrderModalOpen && (
+          <NewWorkOrderModal
+            isOpen={isWorkOrderModalOpen}
+            onClose={() => setIsWorkOrderModalOpen(false)}
+            currentLeaseId={selectedLeaseId}
+            onIngestWorkOrder={handleIngestWorkOrder}
+          />
+        )}
 
-      <NewVendorInvoiceModal
-        isOpen={isVendorInvoiceModalOpen}
-        onClose={() => setIsVendorInvoiceModalOpen(false)}
-        vendors={vendors}
-        onGenerateVendorInvoice={handleGenerateVendorInvoice}
-      />
+        {isVendorInvoiceModalOpen && (
+          <NewVendorInvoiceModal
+            isOpen={isVendorInvoiceModalOpen}
+            onClose={() => setIsVendorInvoiceModalOpen(false)}
+            vendors={vendors}
+            onGenerateVendorInvoice={handleGenerateVendorInvoice}
+          />
+        )}
 
-      <PayBillModal
-        isOpen={isPayModalOpen}
-        onClose={() => setIsPayModalOpen(false)}
-        invoiceId={payTargetInvoiceId}
-        walkthroughData={walkthroughData}
-        onPayInvoice={handlePayInvoice}
-      />
+        {isPayModalOpen && (
+          <PayBillModal
+            isOpen={isPayModalOpen}
+            onClose={() => setIsPayModalOpen(false)}
+            invoiceId={payTargetInvoiceId}
+            walkthroughData={walkthroughData}
+            onPayInvoice={handlePayInvoice}
+          />
+        )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        config={systemConfig}
-        onSaveConfig={handleSaveConfig}
-      />
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            config={systemConfig}
+            onSaveConfig={handleSaveConfig}
+          />
+        )}
 
-      <InvestigationResultModal
-        isOpen={isInvestigationModalOpen}
-        onClose={() => setIsInvestigationModalOpen(false)}
-        investigationData={investigationResult}
-        onApplyAction={(rec) => {
-          handleSubmitDecision(true, 'approved', `Approved per agent recommendation: ${rec}`);
-        }}
-      />
+        {isInvestigationModalOpen && (
+          <InvestigationResultModal
+            isOpen={isInvestigationModalOpen}
+            onClose={() => setIsInvestigationModalOpen(false)}
+            investigationData={investigationResult}
+            onApplyAction={(rec) => {
+              handleSubmitDecision(true, 'approved', `Approved per agent recommendation: ${rec}`);
+            }}
+          />
+        )}
 
-      <BookTourModal
-        isOpen={isTourModalOpen}
-        onClose={() => setIsTourModalOpen(false)}
-        property={tourTargetProperty}
-        onTourBooked={() => fetchPortfolioData()}
-      />
+        {isTourModalOpen && (
+          <BookTourModal
+            isOpen={isTourModalOpen}
+            onClose={() => setIsTourModalOpen(false)}
+            property={tourTargetProperty}
+            onTourBooked={() => fetchPortfolioData()}
+          />
+        )}
 
-      <RentalApplicationModal
-        isOpen={isApplyModalOpen}
-        onClose={() => setIsApplyModalOpen(false)}
-        property={applyTargetProperty}
-        onApplicationSubmitted={() => fetchPortfolioData()}
-      />
+        {isApplyModalOpen && (
+          <RentalApplicationModal
+            isOpen={isApplyModalOpen}
+            onClose={() => setIsApplyModalOpen(false)}
+            property={applyTargetProperty}
+            onApplicationSubmitted={() => fetchPortfolioData()}
+          />
+        )}
+      </Suspense>
 
       {/* Persistent EQUILIBRA AI Assistant in lower-right corner */}
       <EquilibraAssistant />

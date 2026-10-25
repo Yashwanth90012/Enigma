@@ -19,6 +19,15 @@ export default function TenantARModule({
   const [managerNote, setManagerNote] = useState('');
   const [decisionFeedback, setDecisionFeedback] = useState('');
 
+  // Multi-Agent Orchestrator Workflows
+  const [isCrossValidating, setIsCrossValidating] = useState(false);
+  const [crossValidationResult, setCrossValidationResult] = useState(null);
+  const [crossValidationErr, setCrossValidationErr] = useState(null);
+
+  const [isAssessingHabitability, setIsAssessingHabitability] = useState(false);
+  const [habitabilityRiskResult, setHabitabilityRiskResult] = useState(null);
+  const [habitabilityErr, setHabitabilityErr] = useState(null);
+
   const fmtMoney = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const filteredLeases = leases.filter((l) => {
@@ -49,6 +58,61 @@ export default function TenantARModule({
       setDecisionFeedback(`Decision recorded: [${res.state.toUpperCase()}]. ${res.warning || ''}`);
       setManagerNote('');
       setTimeout(() => setDecisionFeedback(''), 6000);
+    }
+  };
+
+  const handleRunCrossValidation = async () => {
+    if (!lease.lease_id) return;
+    setIsCrossValidating(true);
+    setCrossValidationErr(null);
+    try {
+      const res = await fetch('/api/orchestrator/workflows/lease-cross-validation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Organization-Id': 'ORG-APEX'
+        },
+        body: JSON.stringify({ lease_id: lease.lease_id })
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setCrossValidationResult(data);
+    } catch (err) {
+      setCrossValidationErr(err.message);
+    } finally {
+      setIsCrossValidating(false);
+    }
+  };
+
+  const handleRunHabitabilityAssessment = async () => {
+    if (!lease.lease_id) return;
+    setIsAssessingHabitability(true);
+    setHabitabilityErr(null);
+    try {
+      const res = await fetch('/api/orchestrator/workflows/habitability-risk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Organization-Id': 'ORG-APEX'
+        },
+        body: JSON.stringify({
+          lease_id: lease.lease_id,
+          jurisdiction: 'California'
+        })
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setHabitabilityRiskResult(data);
+    } catch (err) {
+      setHabitabilityErr(err.message);
+    } finally {
+      setIsAssessingHabitability(false);
     }
   };
 
@@ -203,7 +267,27 @@ export default function TenantARModule({
               </div>
             </div>
 
-            <div className="case-actions">
+            <div className="case-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn"
+                style={{ background: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.4)', color: 'var(--text-heading)' }}
+                onClick={handleRunCrossValidation}
+                disabled={isCrossValidating || !lease.lease_id}
+                title="Execute 4-agent collaborative lease cross-validation DAG"
+              >
+                {isCrossValidating ? (
+                  <>
+                    <span className="spinner"></span>
+                    <span>Validating 4 Agents...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 12 18 16 14"/></svg>
+                    <span>Cross-Validate Lease DAG</span>
+                  </>
+                )}
+              </button>
+
               <button
                 className="btn btn-primary"
                 onClick={onInvestigateCase}
@@ -223,6 +307,84 @@ export default function TenantARModule({
               </button>
             </div>
           </div>
+
+          {/* Cross-Validation Orchestration Result Panel */}
+          {crossValidationErr && (
+            <div className="discrepancy-callout review" style={{ margin: '4px 0' }}>
+              <strong>Cross-Validation Error:</strong> {crossValidationErr}
+            </div>
+          )}
+
+          {crossValidationResult && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(6, 182, 212, 0.06))',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: 16,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-heading)' }}>
+                    ⚡ 4-Agent Lease Cross-Validation Pipeline
+                  </span>
+                  <span className={`pill ${crossValidationResult.status === 'cross_validated' ? 'emerald' : 'amber'}`}>
+                    {crossValidationResult.status}
+                  </span>
+                  <span className="pill cyan">
+                    Composite Confidence: {Math.round((crossValidationResult.composite_confidence || 0.95) * 100)}%
+                  </span>
+                </div>
+                <button
+                  className="btn btn-subtle btn-sm"
+                  onClick={() => setCrossValidationResult(null)}
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              {/* Steps Progress */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                {(crossValidationResult.steps || []).map((st, sIdx) => (
+                  <div key={sIdx} style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 6,
+                    padding: '8px 10px',
+                    fontSize: 11
+                  }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-heading)', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Step {sIdx + 1}: {st.agent}</span>
+                      <span style={{ color: 'var(--emerald)' }}>✓</span>
+                    </div>
+                    <div style={{ color: 'var(--text-dim)', marginTop: 2, fontSize: 10 }}>
+                      Outcome: {st.outcome || 'Passed'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Discrepancies Callout */}
+              {(crossValidationResult.discrepancies || []).length > 0 ? (
+                <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 6, padding: '8px 12px', fontSize: 11 }}>
+                  <strong style={{ color: 'var(--rose)' }}>Discrepancies Detected:</strong>
+                  <ul style={{ paddingLeft: 18, marginTop: 4, color: 'var(--text-main)' }}>
+                    {crossValidationResult.discrepancies.map((d, dIdx) => (
+                      <li key={dIdx}>{typeof d === 'string' ? d : JSON.stringify(d)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--emerald)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>✓</span>
+                  <span>Zero contract discrepancies found between OCR lease extraction, tenant AR ledger, and financial records.</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 3-Way Match Matrix Cards */}
           <div className="ledger-grid">
@@ -412,35 +574,140 @@ export default function TenantARModule({
               )}
 
               {activeTab === 'workorders' && (
-                <div className="evidence-list">
-                  {workOrders.length > 0 ? (
-                    workOrders.map((w) => (
-                      <div key={w.work_order_id} className="evidence-card">
-                        <div className="evidence-header">
-                          <div>
-                            <span className="evidence-id">{w.work_order_id}</span>
-                            <span className={`pill ${w.priority === 'High' ? 'rose' : 'amber'}`} style={{ marginLeft: 6, fontSize: 10 }}>
-                              {w.priority} Priority
-                            </span>
-                            <span className="pill" style={{ fontSize: 10 }}>Status: {w.status}</span>
-                          </div>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-heading)' }}>
-                            Est: {fmtMoney(w.estimated_cost_usd)}
-                          </span>
-                        </div>
-                        <div className="evidence-body">
-                          <strong>{w.category}:</strong> {w.description}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                          <span>Reported: {w.reported_date}</span> · <span>Tech: {w.technician || 'Assigned'}</span> · <span>Notes: {w.technician_notes || 'None'}</span>
-                        </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Habitability Assessment Action Bar */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 6,
+                    padding: '8px 12px'
+                  }}>
+                    <div>
+                      <strong style={{ fontSize: 13, color: 'var(--text-heading)' }}>Maintenance & SLA Tracking</strong>
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                        Jurisdiction: California Civil Code § 1941.1 (Warranty of Habitability)
                       </div>
-                    ))
-                  ) : (
-                    <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: 20 }}>
-                      No maintenance work orders reported for this unit.
+                    </div>
+                    <button
+                      className="btn"
+                      style={{ background: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.4)', color: 'var(--text-heading)', fontSize: 12 }}
+                      onClick={handleRunHabitabilityAssessment}
+                      disabled={isAssessingHabitability || !lease.lease_id}
+                      title="Run cross-agent habitability and rent withholding risk assessment"
+                    >
+                      {isAssessingHabitability ? (
+                        <>
+                          <span className="spinner"></span>
+                          <span>Assessing Risk...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                          <span>Assess Habitability & Withholding Risk</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {habitabilityErr && (
+                    <div className="discrepancy-callout review">
+                      <strong>Risk Assessment Error:</strong> {habitabilityErr}
                     </div>
                   )}
+
+                  {/* Habitability Risk Assessment Result Card */}
+                  {habitabilityRiskResult && (
+                    <div style={{
+                      background: habitabilityRiskResult.severity === 'critical' ? 'rgba(244, 63, 94, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                      border: `1px solid ${habitabilityRiskResult.severity === 'critical' ? 'rgba(244, 63, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      borderRadius: 8,
+                      padding: 14,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-heading)' }}>
+                            🛡️ Habitability Risk Assessment
+                          </span>
+                          <span className={`pill ${habitabilityRiskResult.severity === 'critical' ? 'rose' : habitabilityRiskResult.severity === 'elevated' ? 'amber' : 'emerald'}`}>
+                            {habitabilityRiskResult.severity?.toUpperCase()} SEVERITY
+                          </span>
+                          <span className="pill cyan">
+                            Risk Score: {habitabilityRiskResult.habitability_risk_score} / 100
+                          </span>
+                        </div>
+                        <button
+                          className="btn btn-subtle btn-sm"
+                          onClick={() => setHabitabilityRiskResult(null)}
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                        >
+                          ✕ Close
+                        </button>
+                      </div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text-main)', lineHeight: 1.5 }}>
+                        <strong>Rent Withholding Exposure:</strong> {habitabilityRiskResult.rent_withholding_risk ? '⚠️ YES — Tenant may legally withhold rent under statutory habitability remedies' : '✓ NO — Routine maintenance; rent withholding not legally justified'}
+                      </div>
+
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        <strong>Immediate Required Action:</strong> {habitabilityRiskResult.immediate_action_required || 'Monitor repair to completion within SLA'}
+                      </div>
+
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                        <strong>Legal Basis & Statutory Timeline:</strong> {habitabilityRiskResult.legal_basis || 'California Civil Code § 1941.1 / § 1942'} · Max statutory window: {habitabilityRiskResult.statutory_timeline_days || 30} days
+                      </div>
+
+                      {habitabilityRiskResult.communication_draft && (
+                        <div style={{ marginTop: 6, padding: 8, background: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>
+                            ✉️ AUTOMATED NOTICE DRAFT (TEMPLATE-BACKED)
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-heading)' }}>
+                            Subject: {habitabilityRiskResult.communication_draft.rendered_subject}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                            Recipient: {habitabilityRiskResult.communication_draft.recipient}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="evidence-list">
+                    {workOrders.length > 0 ? (
+                      workOrders.map((w) => (
+                        <div key={w.work_order_id} className="evidence-card">
+                          <div className="evidence-header">
+                            <div>
+                              <span className="evidence-id">{w.work_order_id}</span>
+                              <span className={`pill ${w.priority === 'High' ? 'rose' : 'amber'}`} style={{ marginLeft: 6, fontSize: 10 }}>
+                                {w.priority} Priority
+                              </span>
+                              <span className="pill" style={{ fontSize: 10 }}>Status: {w.status}</span>
+                            </div>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-heading)' }}>
+                              Est: {fmtMoney(w.estimated_cost_usd)}
+                            </span>
+                          </div>
+                          <div className="evidence-body">
+                            <strong>{w.category}:</strong> {w.description}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                            <span>Reported: {w.reported_date}</span> · <span>Tech: {w.technician || 'Assigned'}</span> · <span>Notes: {w.technician_notes || 'None'}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: 20 }}>
+                        No maintenance work orders reported for this unit.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

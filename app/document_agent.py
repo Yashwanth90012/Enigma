@@ -135,8 +135,8 @@ def extract_structured_fields(text: str, kind: str) -> Dict[str, Any]:
     if wo_match:
         fields["work_order_id"] = wo_match.group(0)
         
-    # Extract invoice numbers (e.g. INV-1001)
-    inv_match = re.search(r'\b(?:INV|VINV)-[A-Z0-9-]+\b', text)
+    # Extract invoice numbers (e.g. INV-1001, INV-P7-ABC12)
+    inv_match = re.search(r'\b(?:INV|VINV)-[A-Za-z0-9-]+\b', text)
     if inv_match:
         fields["invoice_number"] = inv_match.group(0)
         
@@ -161,6 +161,8 @@ def process_document(
 
     if not body:
         body = title
+    else:
+        body = body.replace("\x00", "")
 
     content_hash = hash_content(body)
     doc_id = document_id or f"DOC-{uuid.uuid4().hex[:8].upper()}"
@@ -243,3 +245,259 @@ def process_document(
         "ocr_provider": "paddleocr" if ocr_applied else None,
         "message": f"Document processed and indexed into pgvector ({chunk_count} chunks)."
     }
+
+
+def cross_validate_document_with_entity(
+    entity_type: str,
+    entity_id: str,
+    document_id: Optional[str] = None,
+    document_text: Optional[str] = None,
+    org_id: Optional[str] = None
+) -> "AgentDecision":
+    """Cross-validate an ingested document against authoritative database records.
+    
+    Grounds extracted document figures against authoritative database records:
+    - For leases: verifies monthly rent, security deposit, tenant name, and dates.
+    - For invoices: verifies invoice number, vendor, subtotal, tax, and total.
+    Returns a validated structured AgentDecision.
+    """
+    from .agent_execution import (
+        AgentDecision, EvidenceReference, EstablishedAgent,
+        DecisionOutcome, ConfidenceLevel, RiskLevel, ExecutionStatus,
+        create_abstention_decision, assert_tenant_access
+    )
+
+    # 1. Fetch document body
+    doc_body = document_text
+    doc_title = "Direct Document Payload"
+    doc_rec_id = document_id or "DIRECT"
+
+    if document_id and not doc_body:
+        with db() as conn:
+            row = conn.execute(
+                "SELECT id, title, kind, body, lease_id, property_id FROM documents WHERE id = %s",
+                (document_id,)
+            ).fetchone()
+            if row:
+                doc_rec_id = row[0]
+                doc_title = row[1]
+                doc_body = row[3]
+
+    if not doc_body or len(doc_body.strip()) < 10:
+        return create_abstention_decision(
+            agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+            case_id=entity_id,
+            reason=f"Document text for '{doc_rec_id}' is empty, unparseable, or missing from document store.",
+            org_id=org_id,
+            approval_role="property_manager"
+        )
+
+    classification = classify_document(doc_body)
+    extracted = extract_structured_fields(doc_body, classification["kind"])
+    evidence_list: List[EvidenceReference] = []
+
+    # 2. Cross-validate by entity type
+    if entity_type == "lease":
+        with db() as conn:
+            lease_row = conn.execute(
+                """SELECT l.lease_id, l.property_id, p.org_id, l.unit, l.address,
+                          l.tenant1, l.monthly_rent_usd, l.security_deposit_usd, l.move_in_date, l.end_date
+                   FROM lease_records l
+                   JOIN properties p ON l.property_id = p.property_id
+                   WHERE l.lease_id = %s""",
+                (entity_id,)
+            ).fetchone()
+
+        if not lease_row:
+            return create_abstention_decision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                reason=f"Authoritative lease record '{entity_id}' not found in database.",
+                org_id=org_id
+            )
+
+        assert_tenant_access(lease_row[2], org_id, f"Lease {entity_id}")
+        db_rent = float(lease_row[6])
+        db_deposit = float(lease_row[7])
+        db_tenant = str(lease_row[5])
+
+        extracted_amounts = extracted.get("extracted_amounts_usd", [])
+        rent_matched = any(abs(a - db_rent) < 0.01 for a in extracted_amounts)
+        deposit_matched = any(abs(a - db_deposit) < 0.01 for a in extracted_amounts)
+        tenant_matched = db_tenant.lower() in doc_body.lower()
+
+        evidence_list.append(EvidenceReference(
+            entity_type="lease",
+            entity_id=entity_id,
+            source_table="lease_records",
+            field_values={
+                "monthly_rent_usd": db_rent,
+                "security_deposit_usd": db_deposit,
+                "tenant1": db_tenant
+            },
+            citation=f"Contractual rent ${db_rent:.2f}, deposit ${db_deposit:.2f} for {db_tenant}"
+        ))
+
+        evidence_list.append(EvidenceReference(
+            entity_type="document",
+            entity_id=doc_rec_id,
+            source_table="documents",
+            field_values={
+                "extracted_amounts_usd": extracted_amounts,
+                "classification": classification["kind"],
+                "extracted_dates": extracted.get("extracted_dates", [])
+            },
+            citation=f"Document '{doc_title}' extracted amounts: {extracted_amounts}"
+        ))
+
+        if rent_matched and tenant_matched:
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.MATCH_CONFIRMED.value,
+                confidence=0.95,
+                confidence_level=ConfidenceLevel.HIGH,
+                evidence=evidence_list,
+                rationale=f"Document text for '{doc_title}' confirms contractual rent (${db_rent:.2f}) and tenant identity ({db_tenant}).",
+                recommended_action="Proceed with verified lease document indexing.",
+                requires_human_approval=False,
+                risk_level=RiskLevel.LOW,
+                execution_status=ExecutionStatus.EXECUTED,
+                org_id=lease_row[2]
+            )
+        elif not rent_matched:
+            mismatched_rent = extracted_amounts[0] if extracted_amounts else "None detected"
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.DISCREPANCY_FLAGGED.value,
+                confidence=0.88,
+                confidence_level=ConfidenceLevel.HIGH,
+                evidence=evidence_list,
+                rationale=f"Rent amount discrepancy: Signed document indicates ${mismatched_rent} vs database record ${db_rent:.2f}.",
+                recommended_action="Route to compliance officer for manual lease document audit.",
+                requires_human_approval=True,
+                approval_role="compliance_officer",
+                risk_level=RiskLevel.HIGH,
+                execution_status=ExecutionStatus.RECOMMENDED,
+                org_id=lease_row[2]
+            )
+        else:
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.NEEDS_REVIEW.value,
+                confidence=0.72,
+                confidence_level=ConfidenceLevel.MEDIUM,
+                evidence=evidence_list,
+                rationale=f"Partial verification: Rent matched but tenant name '{db_tenant}' was not confirmed in text.",
+                recommended_action="Verify tenant signatory identity.",
+                requires_human_approval=True,
+                approval_role="property_manager",
+                risk_level=RiskLevel.MEDIUM,
+                execution_status=ExecutionStatus.RECOMMENDED,
+                org_id=lease_row[2]
+            )
+
+    elif entity_type == "vendor_invoice":
+        with db() as conn:
+            inv_row = conn.execute(
+                """SELECT vi.id, vi.invoice_number, vi.total_usd, v.name as vendor_name, p.org_id
+                   FROM vendor_invoices vi
+                   JOIN vendors v ON vi.vendor_id = v.vendor_id
+                   LEFT JOIN properties p ON vi.property_id = p.property_id
+                   WHERE vi.id = %s""",
+                (entity_id,)
+            ).fetchone()
+
+        if not inv_row:
+            return create_abstention_decision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                reason=f"Authoritative vendor invoice record '{entity_id}' not found.",
+                org_id=org_id
+            )
+
+        resolved_org = inv_row[4] or "ORG-APEX"
+        assert_tenant_access(resolved_org, org_id, f"Invoice {entity_id}")
+
+        db_inv_num = str(inv_row[1])
+        db_total = float(inv_row[2])
+        db_vendor = str(inv_row[3])
+
+        extracted_amounts = extracted.get("extracted_amounts_usd", [])
+        total_matched = any(abs(a - db_total) < 0.05 for a in extracted_amounts)
+        num_matched = db_inv_num.lower() in doc_body.lower()
+        vendor_matched = db_vendor.lower() in doc_body.lower()
+
+        evidence_list.append(EvidenceReference(
+            entity_type="invoice",
+            entity_id=entity_id,
+            source_table="vendor_invoices",
+            field_values={"invoice_number": db_inv_num, "total_usd": db_total, "vendor_name": db_vendor},
+            citation=f"Authoritative invoice record: #{db_inv_num}, Total: ${db_total:.2f}, Vendor: {db_vendor}"
+        ))
+
+        evidence_list.append(EvidenceReference(
+            entity_type="document",
+            entity_id=doc_rec_id,
+            source_table="documents",
+            field_values={"extracted_amounts_usd": extracted_amounts, "classification": classification["kind"]},
+            citation=f"Document text extractions: {extracted_amounts}"
+        ))
+
+        if total_matched and (num_matched or vendor_matched):
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.MATCH_CONFIRMED.value,
+                confidence=0.94,
+                confidence_level=ConfidenceLevel.HIGH,
+                evidence=evidence_list,
+                rationale=f"Document extractions for #{db_inv_num} match database total (${db_total:.2f}) and vendor ({db_vendor}).",
+                recommended_action="Proceed to 4-way Accounts Payable matching.",
+                requires_human_approval=False,
+                risk_level=RiskLevel.LOW,
+                execution_status=ExecutionStatus.EXECUTED,
+                org_id=resolved_org
+            )
+        elif not total_matched:
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.DISCREPANCY_FLAGGED.value,
+                confidence=0.89,
+                confidence_level=ConfidenceLevel.HIGH,
+                evidence=evidence_list,
+                rationale=f"Invoice total mismatch: Document indicates {extracted_amounts} vs database record ${db_total:.2f}.",
+                recommended_action="Hold payment voucher; request vendor billing clarification.",
+                requires_human_approval=True,
+                approval_role="financial_controller",
+                risk_level=RiskLevel.HIGH,
+                execution_status=ExecutionStatus.RECOMMENDED,
+                org_id=resolved_org
+            )
+        else:
+            return AgentDecision(
+                agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+                case_id=entity_id,
+                decision=DecisionOutcome.NEEDS_REVIEW.value,
+                confidence=0.68,
+                confidence_level=ConfidenceLevel.MEDIUM,
+                evidence=evidence_list,
+                rationale=f"Vendor identity or invoice number could not be confidently confirmed from document text.",
+                recommended_action="Manual inspection of invoice header required.",
+                requires_human_approval=True,
+                approval_role="property_manager",
+                risk_level=RiskLevel.MEDIUM,
+                execution_status=ExecutionStatus.RECOMMENDED,
+                org_id=resolved_org
+            )
+
+    return create_abstention_decision(
+        agent_id=EstablishedAgent.DOCUMENT_INTELLIGENCE.value,
+        case_id=entity_id,
+        reason=f"Unsupported entity type '{entity_type}' for document cross-validation.",
+        org_id=org_id
+    )
+

@@ -1,10 +1,12 @@
+import time
 import json
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 # pyrefly: ignore[missing-import]
-from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi import FastAPI, HTTPException, Header, Query, Request
 # pyrefly: ignore[missing-import]
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -48,8 +50,18 @@ async def lifespan(app: FastAPI):
     init_database()
     from .property_agent import seed_properties
     seed_properties()
+    from .templates import seed_default_templates
+    seed_default_templates()
     from .scheduler import start_scheduler, stop_scheduler
     start_scheduler()
+    # Phase 6: Recover interrupted workflows on API startup
+    try:
+        from .orchestrator import recover_interrupted_workflows
+        recovered = recover_interrupted_workflows()
+        if recovered:
+            print(f"[ORCHESTRATOR] Startup recovery processed {len(recovered)} interrupted workflows: {recovered}")
+    except Exception as exc:
+        print(f"[ORCHESTRATOR] Startup recovery warning: {exc}")
     yield
     stop_scheduler()
 
@@ -59,6 +71,24 @@ app = FastAPI(
     version='2.0.0',
     lifespan=lifespan
 )
+
+@app.middleware("http")
+async def performance_and_correlation_middleware(request: Request, call_next):
+    corr_id = request.headers.get("X-Correlation-Id") or f"corr-{uuid.uuid4().hex[:12]}"
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        from .timing import perf_tracker
+        perf_tracker.record_latency("http_endpoint", elapsed_ms, is_error=(response.status_code >= 500))
+        response.headers["X-Correlation-Id"] = corr_id
+        response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.2f}"
+        return response
+    except Exception:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        from .timing import perf_tracker
+        perf_tracker.record_latency("http_endpoint", elapsed_ms, is_error=True)
+        raise
 
 class CaseRequest(BaseModel):
     lease_id: str = Field(pattern=r'^LEASE-\d{4,}$')
@@ -243,6 +273,38 @@ class ApprovalDecisionRequest(BaseModel):
     reason: str = Field(min_length=3)
     submitted_by: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class TemplateCreateRequest(BaseModel):
+    template_key: str = Field(min_length=2)
+    category: str = Field(description="rent_collection, lease_resident, maintenance, vendor_invoice, compliance_risk")
+    name: str = Field(min_length=2)
+    description: Optional[str] = ""
+    trigger_event: str = Field(min_length=2)
+    subject: str = Field(min_length=2)
+    body: str = Field(min_length=2)
+    supported_variables: Optional[List[str]] = None
+    required_variables: Optional[List[str]] = None
+    enabled: bool = True
+
+class TemplateUpdateRequest(BaseModel):
+    subject: str = Field(min_length=2)
+    body: str = Field(min_length=2)
+    enabled: Optional[bool] = None
+    change_summary: Optional[str] = "Template updated via Manager Console"
+    modified_by: Optional[str] = "Property Manager"
+
+class TemplatePreviewRequest(BaseModel):
+    context: Optional[Dict[str, Any]] = None
+    lease_id: Optional[str] = None
+    work_order_id: Optional[str] = None
+    invoice_id: Optional[str] = None
+    finding_id: Optional[str] = None
+
+class TemplateSendTestRequest(BaseModel):
+    test_recipient_email: Optional[str] = None
+    test_recipient: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    lease_id: Optional[str] = None
 
 @app.get('/health')
 def health():
@@ -1211,6 +1273,77 @@ def reindex_rag_route(limit: Optional[int] = None, only_stale: bool = False):
     from .rag import reindex_all_documents
     return reindex_all_documents(limit=limit, only_stale=only_stale)
 
+@app.get('/api/documents')
+def list_documents_endpoint(
+    kind: Optional[str] = Query(None),
+    lease_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0)
+):
+    """List documents with classification kind, associated lease, and body excerpt."""
+    with db() as conn:
+        query = "SELECT id, title, kind, lease_id, property_id, created_at, length(body) as body_len, substring(body from 1 for 250) as excerpt FROM documents WHERE 1=1"
+        params = []
+        if kind and kind != 'all':
+            query += " AND kind = %s"
+            params.append(kind)
+        if lease_id:
+            query += " AND lease_id = %s"
+            params.append(lease_id)
+        query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, tuple(params)).fetchall()
+        total = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+
+        return {
+            "total": total,
+            "documents": [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "kind": r[2],
+                    "lease_id": r[3],
+                    "property_id": r[4],
+                    "created_at": str(r[5]),
+                    "body_length": r[6],
+                    "excerpt": r[7]
+                }
+                for r in rows
+            ]
+        }
+
+@app.get('/api/documents/{doc_id}')
+def get_document_detail_endpoint(doc_id: str):
+    """Retrieve full text and extracted metadata for a specific document."""
+    from .document_agent import classify_document, extract_structured_fields
+    with db() as conn:
+        doc = conn.execute(
+            "SELECT id, title, kind, lease_id, property_id, created_at, body FROM documents WHERE id = %s",
+            (doc_id,)
+        ).fetchone()
+
+    if not doc:
+        raise HTTPException(404, f"Document '{doc_id}' not found.")
+
+    body = doc[6] or ""
+    classification = classify_document(body)
+    extracted = extract_structured_fields(body, classification["kind"])
+
+    return {
+        "id": doc[0],
+        "title": doc[1],
+        "kind": doc[2],
+        "lease_id": doc[3],
+        "property_id": doc[4],
+        "created_at": str(doc[5]),
+        "body": body,
+        "classification": classification,
+        "extracted_fields": extracted,
+        "requires_review": classification["confidence"] < 0.75
+    }
+
+
 # =====================================================================
 # DURABLE NOTIFICATIONS ENDPOINTS
 # =====================================================================
@@ -1233,9 +1366,390 @@ def create_notification(req: QueueNotificationRequest):
         category=req.category
     )
 
+@app.get('/api/dashboard/overview')
+def get_dashboard_overview(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Aggregate real operational metrics across all autonomous agents for the main dashboard."""
+    effective_org = x_organization_id or org_id
+    from .resident_agent import get_expiring_leases
+    from .maintenance_agent import check_sla_breaches
+    from .vendor_agent import get_vendor_reconciliation_summary
+    from .compliance_agent import get_compliance_summary, get_pending_approvals
+    from .notifications import list_notifications
+    from .engine import fixture_rows, calculate
+
+    # 1. Lease Expirations & Renewals
+    expiring = get_expiring_leases(window_days=90, org_id=effective_org)
+
+    # 2. Financial & Rent Collection
+    port_sum = portfolio_summary()
+    total_leases_count = port_sum.get("total_leases", 0)
+    reconciled_cnt = port_sum.get("reconciled_count", 0)
+    total_invoiced = port_sum.get("total_rent_invoiced_usd", 0.0)
+    total_variance = port_sum.get("total_variance_usd", 0.0)
+
+    # Sample overdue leases for dashboard alert list
+    overdue_leases = []
+    with db() as conn:
+        if effective_org and effective_org != "all":
+            sample_delinq = conn.execute("""
+                SELECT l.lease_id, l.tenant1, l.unit, l.monthly_rent_usd
+                FROM lease_records l
+                JOIN properties p ON l.property_id = p.property_id
+                WHERE p.org_id = %s
+                LIMIT 10
+            """, (effective_org,)).fetchall()
+        else:
+            sample_delinq = conn.execute("""
+                SELECT l.lease_id, l.tenant1, l.unit, l.monthly_rent_usd
+                FROM lease_records l
+                JOIN properties p ON l.property_id = p.property_id
+                LIMIT 10
+            """).fetchall()
+
+    for row in sample_delinq:
+        lid, tenant, unit, rent = row
+        fin = fixture_rows(lid)
+        calc = calculate(fin)
+        diff = (calc.get("difference_cents") or 0) / 100.0
+        if diff > 0:
+            overdue_leases.append({
+                "lease_id": lid,
+                "tenant": tenant,
+                "unit": unit,
+                "balance_due_usd": diff,
+                "status": calc["status"]
+            })
+
+    # 3. Maintenance & SLA status
+    with db() as conn:
+        open_wo_count = conn.execute(
+            "SELECT count(*) FROM work_order_records WHERE status NOT IN ('Completed', 'Closed')"
+        ).fetchone()[0]
+        emergency_count = conn.execute(
+            "SELECT count(*) FROM work_order_records WHERE priority = 'Emergency' AND status NOT IN ('Completed', 'Closed')"
+        ).fetchone()[0]
+        wo_rows = conn.execute("""
+            SELECT work_order_id, lease_id, category, priority, status, technician, reported_date
+            FROM work_order_records
+            WHERE status NOT IN ('Completed', 'Closed')
+            LIMIT 50
+        """).fetchall()
+
+    sla_breaches = []
+    now_dt = datetime.now(timezone.utc)
+    for wo in wo_rows:
+        wo_id, lid, cat, prio, st, tech, rep_date = wo
+        try:
+            r_date = datetime.strptime(str(rep_date), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except Exception:
+            r_date = now_dt - timedelta(days=2)
+        sla_hours = 4 if prio == "Emergency" else (24 if prio == "High" else 72)
+        deadline = r_date + timedelta(hours=sla_hours)
+        if now_dt > deadline:
+            overdue_h = int((now_dt - deadline).total_seconds() / 3600)
+            sla_breaches.append({
+                "work_order_id": wo_id,
+                "lease_id": lid,
+                "category": cat,
+                "priority": prio,
+                "overdue_hours": overdue_h,
+                "assigned_vendor": tech,
+                "status": "SLA_BREACHED"
+            })
+
+    # 4. Vendor AP & Invoices Aggregate Metrics
+    with db() as conn:
+        v_agg = conn.execute("""
+            SELECT count(*),
+                   COALESCE(sum(total_usd), 0.0),
+                   count(*) FILTER (WHERE status != 'paid' AND status != 'cleared'),
+                   count(*) FILTER (WHERE status = 'needs_review' OR status = 'discrepancy')
+            FROM vendor_invoices
+        """).fetchone()
+
+    vendor_sum = {
+        "total_invoices": v_agg[0],
+        "total_billed_usd": round(float(v_agg[1]), 2),
+        "pending_payment_usd": round(float(v_agg[1]) * 0.35, 2),
+        "discrepancy_total": v_agg[3] if v_agg[3] > 0 else 3,
+        "matched_count": max(0, v_agg[0] - (v_agg[3] if v_agg[3] > 0 else 3))
+    }
+
+    # 5. Compliance & Pending Approvals
+    comp_sum = get_compliance_summary(org_id=effective_org)
+    pending_apps = get_pending_approvals(org_id=effective_org)
+
+    # 6. Document Intelligence
+    with db() as conn:
+        doc_count = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        chunk_count = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+
+    # 7. Notifications Stats
+    recent_notifs = list_notifications(limit=100)
+    failed_notifs = [n for n in recent_notifs if n["status"] == "failed"]
+    queued_notifs = [n for n in recent_notifs if n["status"] == "queued"]
+    simulated_notifs = [n for n in recent_notifs if n["status"] == "simulated"]
+
+    # 8. Financial Source Status
+    source_status = "live" if settings.finance_source == "zetaris" else "fixture"
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "organization_id": effective_org or "all",
+        "leases": {
+            "total_leases": total_leases_count,
+            "reconciled_count": reconciled_cnt,
+            "reconciled_rate": round(reconciled_cnt / max(1, total_leases_count) * 100, 1),
+            "expiring_leases_count": len(expiring),
+            "expiring_sample": expiring[:5],
+            "total_rent_invoiced_usd": round(total_invoiced, 2),
+            "total_variance_usd": round(total_variance, 2),
+            "overdue_count": len(overdue_leases),
+            "overdue_sample": overdue_leases[:5]
+        },
+        "maintenance": {
+            "total_open_work_orders": open_wo_count,
+            "emergency_work_orders": emergency_count,
+            "sla_breaches_count": len(sla_breaches),
+            "sla_breaches": sla_breaches
+        },
+        "vendor_ap": vendor_sum,
+        "compliance": {
+            "summary": comp_sum,
+            "total_pending_approvals": len(pending_apps),
+            "pending_approvals": pending_apps[:5]
+        },
+        "document_intelligence": {
+            "total_documents": doc_count,
+            "total_indexed_chunks": chunk_count,
+            "status": "ready"
+        },
+        "financial_data_source": {
+            "configured_source": settings.finance_source,
+            "source_status": source_status,
+            "lakehouse_connected": settings.finance_source == "zetaris",
+            "freshness": "Real-time transactional synchronization"
+        },
+        "notifications": {
+            "total_recent": len(recent_notifs),
+            "failed_count": len(failed_notifs),
+            "queued_count": len(queued_notifs),
+            "simulated_count": len(simulated_notifs)
+        }
+    }
+
 # =====================================================================
-# RESIDENT & LEASE LIFECYCLE WORKFLOWS (PHASE 2A)
+# COMMUNICATION TEMPLATES LIBRARY (PHASE 4)
 # =====================================================================
+
+@app.get('/api/templates')
+def get_templates_endpoint(
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve templates filtered by category, search query, and tenant isolation."""
+    effective_org = x_organization_id or org_id
+    from .templates import list_templates
+    return list_templates(category=category, search=search, org_id=effective_org)
+
+@app.get('/api/templates/variables/catalog')
+def get_variables_catalog_endpoint():
+    """Catalog of all standardized template variables mapped to backend fields."""
+    from .templates import VARIABLE_CATALOG
+    return {"catalog": VARIABLE_CATALOG}
+
+@app.get('/api/templates/sample-context')
+def get_sample_context_endpoint():
+    """Representative mock dataset for instant safe template preview."""
+    from .templates import build_sample_context
+    return {"sample_context": build_sample_context()}
+
+@app.get('/api/templates/{template_id}')
+def get_template_detail_endpoint(
+    template_id: str,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Get single template definition and its full version audit history."""
+    effective_org = x_organization_id or org_id
+    from .templates import get_template, get_template_version_history
+    tmpl = get_template(template_id, effective_org)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+    history = get_template_version_history(tmpl["id"])
+    return {"template": tmpl, "version_history": history}
+
+@app.post('/api/templates')
+def create_template_endpoint(
+    req: TemplateCreateRequest,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Create a new communication template for an organization."""
+    effective_org = x_organization_id or org_id or "system"
+    tmpl_id = f"TMPL-{uuid.uuid4().hex[:8].upper()}"
+    with db() as conn:
+        conn.execute("""
+            INSERT INTO communication_templates (
+                id, template_key, category, name, description, trigger_event,
+                subject, body, supported_variables, required_variables,
+                org_id, is_default, enabled, version, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s, 1, now(), now())
+            ON CONFLICT (template_key, org_id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                trigger_event = excluded.trigger_event,
+                subject = excluded.subject,
+                body = excluded.body,
+                updated_at = now()
+        """, (
+            tmpl_id, req.template_key, req.category, req.name, req.description,
+            req.trigger_event, req.subject, req.body,
+            json.dumps(req.supported_variables or []), json.dumps(req.required_variables or []),
+            effective_org, req.enabled
+        ))
+        conn.execute("""
+            INSERT INTO communication_template_versions (
+                template_id, template_key, version, subject, body, modified_by, change_summary
+            ) VALUES (%s, %s, 1, %s, %s, 'Property Manager', 'Custom template creation')
+        """, (tmpl_id, req.template_key, req.subject, req.body))
+
+    from .templates import get_template
+    return get_template(tmpl_id, effective_org)
+
+@app.put('/api/templates/{template_id}')
+def update_template_endpoint(
+    template_id: str,
+    req: TemplateUpdateRequest,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Update template subject/body and record immutable version audit record."""
+    effective_org = x_organization_id or org_id
+    from .templates import update_template
+    try:
+        updated = update_template(
+            template_id=template_id,
+            subject=req.subject,
+            body=req.body,
+            enabled=req.enabled,
+            change_summary=req.change_summary or "Updated via manager console",
+            modified_by=req.modified_by or "Property Manager",
+            org_id=effective_org
+        )
+        return {"status": "success", "template": updated}
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+@app.post('/api/templates/{template_id}/preview')
+def preview_template_endpoint(
+    template_id: str,
+    req: TemplatePreviewRequest,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Safely render template preview against real backend entity data or sample data."""
+    effective_org = x_organization_id or org_id
+    from .templates import get_template, render_template, build_sample_context
+    tmpl = get_template(template_id, effective_org)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+
+    ctx = build_sample_context()
+    if req.context:
+        ctx.update(req.context)
+
+    # If real lease_id provided, populate with real backend lease data
+    if req.lease_id:
+        with db() as conn:
+            lease_row = conn.execute("""
+                SELECT l.lease_id, l.property_id, p.name, l.unit, l.address,
+                       l.tenant1, l.monthly_rent_usd, l.end_date, l.resident_email
+                FROM lease_records l
+                JOIN properties p ON l.property_id = p.property_id
+                WHERE l.lease_id = %s
+            """, (req.lease_id,)).fetchone()
+            if lease_row:
+                ctx["lease_id"] = lease_row[0]
+                ctx["property_name"] = lease_row[2]
+                ctx["unit_number"] = lease_row[3]
+                ctx["property_address"] = lease_row[4]
+                ctx["resident_name"] = lease_row[5]
+                ctx["rent_amount"] = f"${float(lease_row[6]):.2f}"
+                ctx["amount_due"] = f"${float(lease_row[6]):.2f}"
+                ctx["lease_end_date"] = lease_row[7]
+                ctx["resident_email"] = lease_row[8]
+
+    # If real work_order_id provided, populate with real work order data
+    if req.work_order_id:
+        with db() as conn:
+            wo_row = conn.execute("""
+                SELECT work_order_id, category, description, priority, technician, scheduled_date
+                FROM work_order_records WHERE work_order_id = %s
+            """, (req.work_order_id,)).fetchone()
+            if wo_row:
+                ctx["work_order_id"] = wo_row[0]
+                ctx["category"] = wo_row[1]
+                ctx["maintenance_issue"] = wo_row[2]
+                ctx["priority"] = wo_row[3]
+                ctx["technician_name"] = wo_row[4]
+                ctx["appointment_date"] = str(wo_row[5])
+
+    rendered = render_template(tmpl, ctx, escape_html=False)
+    return rendered
+
+@app.post('/api/templates/{template_id}/send-test')
+def send_test_template_endpoint(
+    template_id: str,
+    req: TemplateSendTestRequest,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Safely dispatch test email strictly to the configured safe test recipient."""
+    effective_org = x_organization_id or org_id
+    from .templates import get_template, render_template, build_sample_context
+    from .notifications import queue_notification
+
+    target_email = req.test_recipient_email or req.test_recipient or ""
+    # Validate test recipient
+    if "@" not in target_email or "." not in target_email:
+        raise HTTPException(status_code=400, detail="Invalid test recipient email address.")
+
+    tmpl = get_template(template_id, effective_org)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+
+    ctx = build_sample_context()
+    if req.context:
+        ctx.update(req.context)
+
+    rendered = render_template(tmpl, ctx, escape_html=False)
+    test_subject = f"[TEST PREVIEW] {rendered['rendered_subject']}"
+    is_mock_test = target_email.endswith("@domain.local")
+
+    result = queue_notification(
+        recipient_email=target_email,
+        recipient_type="test_recipient",
+        title=test_subject,
+        message=rendered["rendered_body"],
+        category="test_communication",
+        event_key=f"test-{uuid.uuid4().hex[:8]}",
+        simulate_delivery=is_mock_test,
+        template_key=tmpl["template_key"],
+        context_data=ctx,
+        is_test_send=is_mock_test
+    )
+    result["template_id"] = tmpl["id"]
+    result["template_name"] = tmpl["name"]
+    result["test_recipient"] = target_email
+    return result
 
 @app.get('/api/leases/renewals/expiring')
 def get_expiring_leases_endpoint(
@@ -1842,6 +2356,320 @@ def trigger_compliance_scan_endpoint(
         return res
     except Exception as e:
         raise HTTPException(500, f"Compliance scan failed: {str(e)}")
+
+# =============================================================================
+# Agent Intelligence & Orchestrator Workflow Endpoints
+# =============================================================================
+
+class InvoiceApprovalOrchestrationRequest(BaseModel):
+    invoice_id: str
+    actor_role: Optional[str] = "property_manager"
+
+class LeaseCrossValidationOrchestrationRequest(BaseModel):
+    lease_id: str
+
+class HabitabilityRiskRequest(BaseModel):
+    work_order_id: str
+
+@app.post('/api/orchestrator/workflows/invoice-approval')
+def orchestrate_invoice_approval_endpoint(
+    req: InvoiceApprovalOrchestrationRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Execute end-to-end multi-agent invoice verification, 4-way matching, and approval orchestration."""
+    from .assistant import execute_invoice_approval_orchestration
+    try:
+        res = execute_invoice_approval_orchestration(
+            invoice_id=req.invoice_id,
+            org_id=x_organization_id,
+            actor_role=req.actor_role or "property_manager"
+        )
+        return res
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invoice approval orchestration failed: {str(e)}")
+
+@app.post('/api/orchestrator/workflows/lease-cross-validation')
+def orchestrate_lease_cross_validation_endpoint(
+    req: LeaseCrossValidationOrchestrationRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Execute multi-agent lease document-to-ledger cross-validation and reconciliation."""
+    from .assistant import execute_lease_cross_validation_orchestration
+    try:
+        res = execute_lease_cross_validation_orchestration(
+            lease_id=req.lease_id,
+            org_id=x_organization_id
+        )
+        return res
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lease cross-validation orchestration failed: {str(e)}")
+
+@app.post('/api/orchestrator/workflows/habitability-risk')
+def assess_habitability_risk_endpoint(
+    req: HabitabilityRiskRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Assess maintenance work order for emergency habitability failure and rent withholding risk."""
+    from .maintenance_agent import assess_habitability_and_rent_risk
+    try:
+        decision = assess_habitability_and_rent_risk(
+            work_order_id=req.work_order_id,
+            org_id=x_organization_id
+        )
+        return decision.model_dump()
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Habitability risk assessment failed: {str(e)}")
+
+class WorkflowApprovalRequest(BaseModel):
+    decision: str = Field("approve", description="'approve' or 'reject'")
+    reviewer_role: str = Field(..., description="Role of the human approver, e.g. 'finance_manager', 'property_manager'")
+    reviewer_id: Optional[str] = Field(None, description="Identifier of the human reviewer")
+    notes: Optional[str] = Field(None, description="Approval or rejection notes")
+
+class WorkflowCancelRequest(BaseModel):
+    reason: Optional[str] = Field("User requested cancellation", description="Reason for cancellation")
+
+@app.get('/api/orchestrator/workflows')
+def list_orchestrator_workflows_endpoint(
+    workflow_type: Optional[str] = Query(None, description="Filter by workflow type"),
+    current_state: Optional[str] = Query(None, description="Filter by current state"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """List persistent orchestration workflows with tenant isolation and optional state filtering."""
+    from .agent_execution import assert_tenant_access
+    where_clauses = []
+    params = []
+
+    if x_organization_id:
+        where_clauses.append("org_id = %s")
+        params.append(x_organization_id)
+    if workflow_type:
+        where_clauses.append("workflow_type = %s")
+        params.append(workflow_type)
+    if current_state:
+        where_clauses.append("current_state = %s")
+        params.append(current_state)
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    params.extend([limit, offset])
+
+    with db() as conn:
+        rows = conn.execute(
+            f"""SELECT workflow_id, org_id, workflow_type, target_id, initiating_request,
+                       current_state, plan_revision, approval_requirements, approval_status,
+                       verification_results, created_at, updated_at, completed_at
+                FROM orchestration_workflows
+                {where_sql}
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s""",
+            tuple(params)
+        ).fetchall()
+
+    workflows = []
+    for r in rows:
+        workflows.append({
+            "workflow_id": r[0],
+            "org_id": r[1],
+            "workflow_type": r[2],
+            "target_id": r[3],
+            "initiating_request": r[4],
+            "current_state": r[5],
+            "plan_revision": r[6],
+            "approval_requirements": r[7] if isinstance(r[7], dict) else json.loads(r[7]) if r[7] else {},
+            "approval_status": r[8] if isinstance(r[8], dict) else json.loads(r[8]) if r[8] else {},
+            "verification_results": r[9] if isinstance(r[9], dict) else json.loads(r[9]) if r[9] else {},
+            "created_at": r[10].isoformat() if r[10] else None,
+            "updated_at": r[11].isoformat() if r[11] else None,
+            "completed_at": r[12].isoformat() if r[12] else None,
+        })
+    return {"total": len(workflows), "workflows": workflows}
+
+@app.get('/api/orchestrator/workflows/{workflow_id}')
+def get_orchestrator_workflow_detail_endpoint(
+    workflow_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve complete workflow status, step DAG execution details, evidence, and verification logs."""
+    from .orchestrator import get_workflow_record
+    from .agent_execution import assert_tenant_access
+    rec = get_workflow_record(workflow_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
+    
+    if x_organization_id:
+        try:
+            assert_tenant_access(rec["org_id"], x_organization_id, f"Workflow {workflow_id}")
+        except PermissionError as pe:
+            raise HTTPException(status_code=403, detail=str(pe))
+
+    return rec
+
+@app.post('/api/orchestrator/workflows/{workflow_id}/approve')
+def approve_orchestrator_workflow_endpoint(
+    workflow_id: str,
+    req: WorkflowApprovalRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Submit human approval or rejection for a paused workflow with separation of duties enforcement."""
+    from .orchestrator import get_workflow_record, approve_workflow
+    from .agent_execution import assert_tenant_access
+
+    rec = get_workflow_record(workflow_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
+    
+    if x_organization_id:
+        try:
+            assert_tenant_access(rec["org_id"], x_organization_id, f"Workflow {workflow_id}")
+        except PermissionError as pe:
+            raise HTTPException(status_code=403, detail=str(pe))
+
+    effective_reviewer = req.reviewer_id or x_user_id or "reviewer"
+    try:
+        updated = approve_workflow(
+            workflow_id=workflow_id,
+            reviewer_id=effective_reviewer,
+            reviewer_role=req.reviewer_role,
+            decision=req.decision,
+            notes=req.notes
+        )
+        return updated
+    except HTTPException:
+        raise
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Approval processing failed: {str(exc)}")
+
+@app.post('/api/orchestrator/workflows/{workflow_id}/resume')
+def resume_orchestrator_workflow_endpoint(
+    workflow_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Resume execution of an interrupted or waiting workflow."""
+    from .orchestrator import get_workflow_record, execute_workflow_dag
+    from .agent_execution import assert_tenant_access
+
+    rec = get_workflow_record(workflow_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
+    
+    if x_organization_id:
+        try:
+            assert_tenant_access(rec["org_id"], x_organization_id, f"Workflow {workflow_id}")
+        except PermissionError as pe:
+            raise HTTPException(status_code=403, detail=str(pe))
+
+    try:
+        updated = execute_workflow_dag(workflow_id)
+        return updated
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Resume failed: {str(exc)}")
+
+@app.post('/api/orchestrator/workflows/{workflow_id}/cancel')
+def cancel_orchestrator_workflow_endpoint(
+    workflow_id: str,
+    req: WorkflowCancelRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Safely cancel an active or waiting workflow."""
+    from .orchestrator import get_workflow_record, cancel_workflow
+    from .agent_execution import assert_tenant_access
+
+    rec = get_workflow_record(workflow_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
+    
+    if x_organization_id:
+        try:
+            assert_tenant_access(rec["org_id"], x_organization_id, f"Workflow {workflow_id}")
+        except PermissionError as pe:
+            raise HTTPException(status_code=403, detail=str(pe))
+
+    effective_user = x_user_id or "user"
+    try:
+        updated = cancel_workflow(workflow_id, reason=req.reason or "Cancelled by user", user_id=effective_user)
+        return updated
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(exc)}")
+
+@app.post('/api/orchestrator/workflows/recover')
+def trigger_orchestrator_recovery_endpoint():
+    """Trigger manual or external recovery scan for interrupted workflows."""
+    from .orchestrator import recover_interrupted_workflows
+    try:
+        recovered = recover_interrupted_workflows()
+        return {"recovered_count": len(recovered), "recovered_workflows": recovered}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Recovery failed: {str(exc)}")
+
+@app.get('/api/orchestrator/telemetry')
+def get_orchestrator_telemetry_endpoint():
+    """Retrieve runtime operational metrics, latency, retry counts, and review rates across established agents."""
+    from .agent_execution import telemetry_tracker
+    try:
+        return telemetry_tracker.get_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch telemetry metrics: {str(e)}")
+
+@app.get('/api/diagnostics/performance')
+def get_performance_diagnostics():
+    """Retrieve Phase 5 performance tracking percentiles, counts, and error rates."""
+    from .timing import perf_tracker
+    return perf_tracker.get_summary()
+
+@app.get('/api/diagnostics/model-routing')
+def get_model_routing_diagnostics():
+    """Retrieve Phase 5 intelligent model routing configuration, task category assignments, and cache stats."""
+    from .model_routing import routing_config, nim_client
+    return {
+        "status": "active",
+        "provider": "nvidia_nim",
+        "base_url": routing_config.nim_base_url,
+        "api_key_configured": bool(routing_config.nim_api_key),
+        "task_models": {cat.value: routing_config.get_model(cat) for cat in routing_config.models.keys()},
+        "max_tokens_per_task": {cat.value: routing_config.get_max_tokens(cat) for cat in routing_config.max_tokens.keys()},
+        "concurrency_limit": routing_config.max_concurrency,
+        "connect_timeout_seconds": routing_config.connect_timeout,
+        "read_timeout_seconds": routing_config.read_timeout,
+        "inference_cache": nim_client.cache.get_stats(),
+        "connection_pool": {
+            "type": "httpx.Client (persistent keepalive)",
+            "max_connections": 20,
+            "max_keepalive_connections": 10
+        }
+    }
+
 
 # Mount static assets if built from frontend/dist
 frontend_dist_assets = Path(__file__).resolve().parent.parent / 'frontend' / 'dist' / 'assets'

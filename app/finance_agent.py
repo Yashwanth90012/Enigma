@@ -289,3 +289,166 @@ def sweep_grace_period_and_overdue() -> List[Dict[str, Any]]:
             )
             
     return delinquencies
+
+
+def reconcile_lease_case_decision(lease_id: str, org_id: Optional[str] = None) -> "AgentDecision":
+    """Perform deterministic 3-way financial reconciliation and return a grounded AgentDecision.
+    
+    Cross-checks invoice, tenant payments, cleared bank transactions, and maintenance habitability offsets.
+    """
+    from .agent_execution import (
+        AgentDecision, EvidenceReference, EstablishedAgent,
+        DecisionOutcome, ConfidenceLevel, RiskLevel, ExecutionStatus,
+        create_abstention_decision, assert_tenant_access
+    )
+    from .engine import fixture_rows, calculate, cross_check_work_orders
+
+    # 1. Fetch lease ownership
+    with db() as conn:
+        row = conn.execute(
+            """SELECT l.lease_id, l.property_id, p.org_id, l.unit, l.address, l.tenant1, l.monthly_rent_usd
+               FROM lease_records l
+               JOIN properties p ON l.property_id = p.property_id
+               WHERE l.lease_id = %s""",
+            (lease_id,)
+        ).fetchone()
+
+    if not row:
+        return create_abstention_decision(
+            agent_id=EstablishedAgent.RENT_RECONCILIATION.value,
+            case_id=lease_id,
+            reason=f"Lease record '{lease_id}' not found in database.",
+            org_id=org_id
+        )
+
+    l_id, p_id, p_org, unit, addr, tenant, rent_usd = row
+    assert_tenant_access(p_org, org_id, f"Lease {lease_id}")
+
+    # 2. Fetch financial records & reconcile
+    fin = fixture_rows(lease_id)
+    recon = calculate(fin)
+    status = recon["status"]
+    rc = recon["reason_code"]
+    diff_cents = recon.get("difference_cents") or 0
+    diff_usd = diff_cents / 100.0
+
+    evidence_list: List[EvidenceReference] = [
+        EvidenceReference(
+            entity_type="lease",
+            entity_id=lease_id,
+            source_table="lease_records",
+            field_values={"monthly_rent_usd": float(rent_usd), "tenant1": tenant, "address": addr},
+            citation=f"Contractual base rent: ${float(rent_usd):.2f} for {tenant} ({addr})"
+        )
+    ]
+
+    for inv in fin.get("invoices", []):
+        evidence_list.append(EvidenceReference(
+            entity_type="invoice",
+            entity_id=str(inv["id"]),
+            source_table="invoices",
+            field_values={"amount": float(inv["amount"]), "currency": inv.get("currency", "USD")},
+            citation=f"Invoiced amount: ${float(inv['amount']):.2f}"
+        ))
+
+    for pay in fin.get("payments", []):
+        evidence_list.append(EvidenceReference(
+            entity_type="payment",
+            entity_id=str(pay["id"]),
+            source_table="payments",
+            field_values={"amount": float(pay["amount"]), "reference": pay.get("reference")},
+            citation=f"Tenant remittance voucher: ${float(pay['amount']):.2f} (Ref: {pay.get('reference')})"
+        ))
+
+    for bank in fin.get("bank", []):
+        evidence_list.append(EvidenceReference(
+            entity_type="bank_transaction",
+            entity_id=str(bank["id"]),
+            source_table="bank_transactions",
+            field_values={"amount": float(bank["amount"]), "reference": bank.get("reference")},
+            citation=f"Cleared bank transaction: ${float(bank['amount']):.2f} (Ref: {bank.get('reference')})"
+        ))
+
+    # 3. Habitability withholding cross-check
+    wo_check = cross_check_work_orders(lease_id, diff_cents)
+    if wo_check and wo_check.get("withholding_suspected"):
+        evidence_list.append(EvidenceReference(
+            entity_type="work_order",
+            entity_id=wo_check["work_order_id"],
+            source_table="work_order_records",
+            field_values={
+                "category": wo_check.get("category"),
+                "priority": wo_check.get("priority"),
+                "estimated_cost_usd": float(wo_check.get("estimated_cost_usd", 0.0))
+            },
+            citation=f"Active maintenance withholding: {wo_check['work_order_id']} ({wo_check.get('category')})"
+        ))
+
+        return AgentDecision(
+            agent_id=EstablishedAgent.RENT_RECONCILIATION.value,
+            case_id=lease_id,
+            decision=DecisionOutcome.ESCALATED.value,
+            confidence=0.93,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Tenant rent variance of ${diff_usd:.2f} coincides with active maintenance ticket {wo_check['work_order_id']} ({wo_check.get('category')}). Tenant withholding defense likely.",
+            recommended_action="Coordinate with maintenance superintendent before initiating statutory late fee or 3-day notice.",
+            requires_human_approval=True,
+            approval_role="property_manager",
+            risk_level=RiskLevel.HIGH,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=p_org,
+            metadata={"reconciliation": recon, "withholding_work_order": wo_check}
+        )
+
+    if rc == "MATCH_CONFIRMED":
+        return AgentDecision(
+            agent_id=EstablishedAgent.RENT_RECONCILIATION.value,
+            case_id=lease_id,
+            decision=DecisionOutcome.MATCH_CONFIRMED.value,
+            confidence=0.98,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"3-way reconciliation 100% verified across monthly invoice, tenant remittance, and bank clearing ledger.",
+            recommended_action="Mark lease billing cycle closed as fully reconciled.",
+            requires_human_approval=False,
+            risk_level=RiskLevel.LOW,
+            execution_status=ExecutionStatus.EXECUTED,
+            org_id=p_org,
+            metadata={"reconciliation": recon}
+        )
+    elif rc == "PARTIAL_REMITTANCE":
+        return AgentDecision(
+            agent_id=EstablishedAgent.RENT_RECONCILIATION.value,
+            case_id=lease_id,
+            decision=DecisionOutcome.DISCREPANCY_FLAGGED.value,
+            confidence=0.95,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Partial remittance: Tenant cleared ${recon['verified_paid_cents']/100:.2f} of ${recon['invoice_cents']/100:.2f} due. Ledger balance outstanding: ${diff_usd:.2f}.",
+            recommended_action="Queue friendly grace period reminder; flag for property manager ledger review.",
+            requires_human_approval=True,
+            approval_role="property_manager",
+            risk_level=RiskLevel.MEDIUM,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=p_org,
+            metadata={"reconciliation": recon}
+        )
+    else:
+        return AgentDecision(
+            agent_id=EstablishedAgent.RENT_RECONCILIATION.value,
+            case_id=lease_id,
+            decision=DecisionOutcome.NEEDS_REVIEW.value,
+            confidence=0.86,
+            confidence_level=ConfidenceLevel.HIGH,
+            evidence=evidence_list,
+            rationale=f"Reconciliation exception ({rc}): {recon['reason']}.",
+            recommended_action="Conduct banking ledger audit to resolve unmatched remittances or missing references.",
+            requires_human_approval=True,
+            approval_role="financial_controller",
+            risk_level=RiskLevel.HIGH,
+            execution_status=ExecutionStatus.RECOMMENDED,
+            org_id=p_org,
+            metadata={"reconciliation": recon}
+        )
+
