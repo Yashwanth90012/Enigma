@@ -548,7 +548,41 @@ def init_database():
         conn.execute('CREATE INDEX IF NOT EXISTS ael_key ON agent_execution_logs(idempotency_key)')
         conn.execute('CREATE INDEX IF NOT EXISTS ael_agent ON agent_execution_logs(agent_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS ael_case ON agent_execution_logs(case_id)')
-        conn.execute('CREATE INDEX IF NOT EXISTS ael_org ON agent_execution_logs(org_id)')
+        # Communication Templates & Versions
+        conn.execute('''CREATE TABLE IF NOT EXISTS communication_templates (
+            id TEXT PRIMARY KEY,
+            template_key TEXT NOT NULL,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            trigger_event TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            supported_variables JSONB DEFAULT '[]'::jsonb,
+            required_variables JSONB DEFAULT '[]'::jsonb,
+            org_id TEXT DEFAULT 'system',
+            is_default BOOLEAN DEFAULT TRUE,
+            enabled BOOLEAN DEFAULT TRUE,
+            version INT DEFAULT 1,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            UNIQUE (template_key, org_id)
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS ct_key ON communication_templates(template_key)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ct_cat ON communication_templates(category)')
+        conn.execute('CREATE INDEX IF NOT EXISTS ct_org ON communication_templates(org_id)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS communication_template_versions (
+            id BIGSERIAL PRIMARY KEY,
+            template_id TEXT NOT NULL REFERENCES communication_templates(id) ON DELETE CASCADE,
+            template_key TEXT NOT NULL,
+            version INT NOT NULL,
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            modified_by TEXT NOT NULL,
+            change_summary TEXT,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
 
         # Phase 5 High-Impact Targeted Query Optimization Indexes
         conn.execute('CREATE INDEX IF NOT EXISTS doc_prop ON documents(property_id)')

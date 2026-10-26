@@ -398,18 +398,32 @@ def record_vendor_payment(
         'message': f"Payment of ${amount_usd:.2f} recorded via {payment_method.replace('_', ' ').title()}."
     }
 
-def get_vendor_reconciliation_summary() -> Dict[str, Any]:
+def get_vendor_reconciliation_summary(org_id: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate high-level accounts payable and reconciliation metrics across all vendor invoices."""
     with db() as conn:
-        rows = conn.execute(
-            """SELECT vi.id, vi.total_usd, vi.status, 
-                      COALESCE(vp.amount_usd, 0.0) as paid_amount,
-                      COALESCE(vp.payment_method, '') as payment_method,
-                      COALESCE(vb.amount_usd, 0.0) as cleared_amount
-               FROM vendor_invoices vi
-               LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
-               LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id"""
-        ).fetchall()
+        if org_id and org_id != "all":
+            rows = conn.execute(
+                """SELECT vi.id, vi.total_usd, vi.status, 
+                          COALESCE(vp.amount_usd, 0.0) as paid_amount,
+                          COALESCE(vp.payment_method, '') as payment_method,
+                          COALESCE(vb.amount_usd, 0.0) as cleared_amount
+                   FROM vendor_invoices vi
+                   JOIN properties p ON vi.property_id = p.property_id
+                   LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
+                   LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id
+                   WHERE p.org_id = %s""",
+                (org_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT vi.id, vi.total_usd, vi.status, 
+                          COALESCE(vp.amount_usd, 0.0) as paid_amount,
+                          COALESCE(vp.payment_method, '') as payment_method,
+                          COALESCE(vb.amount_usd, 0.0) as cleared_amount
+                   FROM vendor_invoices vi
+                   LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
+                   LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id"""
+            ).fetchall()
 
     total_invoices = len(rows)
     total_billed = sum(float(r[1]) for r in rows)

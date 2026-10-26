@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Header from './components/Header';
-import HubSwitcher from './components/HubSwitcher';
+import Sidebar from './components/Sidebar';
 import TenantARModule from './components/TenantARModule';
 import VendorAPModule from './components/VendorAPModule';
 import OperationalDashboardOverview from './components/OperationalDashboardOverview';
@@ -56,7 +56,8 @@ export default function App() {
   }, [theme]);
 
   // Telemetry & Active Hub
-  const [activeHub, setActiveHub] = useState('tenant');
+  const [activeHub, setActiveHub] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [telemetry, setTelemetry] = useState({
     totalChunks: 9300,
     worldEvents: 0,
@@ -148,18 +149,23 @@ export default function App() {
   };
 
   // Load Tenant AR Data
-  const loadTenantARData = async () => {
+  const loadTenantARData = useCallback(async (orgId = currentOrgId) => {
     try {
+      const q = orgId && orgId !== 'all' ? `?org_id=${encodeURIComponent(orgId)}` : '';
       const [s, l] = await Promise.all([
-        api('/api/portfolio/summary'),
-        api('/api/leases')
+        api(`/api/portfolio/summary${q}`),
+        api(`/api/leases${q}`)
       ]);
       setSummary(s);
       setLeases(l);
+      if (l.length > 0) {
+        setSelectedLeaseId(l[0].lease_id);
+        loadLeaseDetails(l[0].lease_id);
+      }
     } catch (e) {
       console.error('Tenant summary load error', e);
     }
-  };
+  }, [currentOrgId]);
 
   // Load Lease Details
   const loadLeaseDetails = async (leaseId) => {
@@ -174,27 +180,26 @@ export default function App() {
   };
 
   // Load Vendor AP Data
-  const loadVendorAPData = async () => {
+  const loadVendorAPData = useCallback(async (orgId = currentOrgId) => {
     try {
+      const q = orgId && orgId !== 'all' ? `?org_id=${encodeURIComponent(orgId)}` : '';
       const [vs, vi, v] = await Promise.all([
-        api('/api/vendor-summary'),
-        api('/api/vendor-invoices'),
+        api(`/api/vendor-summary${q}`),
+        api(`/api/vendor-invoices${q}`),
         api('/api/vendors')
       ]);
       setVendorSummary(vs);
       setVendorInvoices(vi);
       setVendors(v);
 
-      if (!selectedInvoiceId && vi.length > 0) {
+      if (vi.length > 0) {
         setSelectedInvoiceId(vi[0].id);
         reconcileInvoice(vi[0].id);
-      } else if (selectedInvoiceId) {
-        reconcileInvoice(selectedInvoiceId);
       }
     } catch (e) {
       console.error('Vendor AP load error', e);
     }
-  };
+  }, [currentOrgId]);
 
   // Reconcile Invoice (4-Way Match)
   const reconcileInvoice = async (invoiceId) => {
@@ -214,10 +219,15 @@ export default function App() {
   useEffect(() => {
     loadTelemetry();
     loadSaaSData();
-    loadTenantARData();
-    loadLeaseDetails(selectedLeaseId);
-    loadVendorAPData();
   }, []);
+
+  // Reload data whenever current organization changes
+  useEffect(() => {
+    if (currentOrgId) {
+      loadTenantARData(currentOrgId);
+      loadVendorAPData(currentOrgId);
+    }
+  }, [currentOrgId, loadTenantARData, loadVendorAPData]);
 
   // Handle Hub Tab Switching (Dismiss modals across tabs)
   const handleSwitchHub = (hub) => {
@@ -426,124 +436,152 @@ export default function App() {
   };
 
   return (
-    <>
-      <Header
-        theme={theme}
-        toggleTheme={toggleTheme}
+    <div className="app-layout-root">
+      <div className="app-shell">
+        <Sidebar
+        activeHub={activeHub}
+        setActiveHub={handleSwitchHub}
+        tenantCount={leases.length}
+        vendorBillCount={vendorInvoices.length}
+        reqCount={requirements.length}
         telemetry={telemetry}
         organizations={organizations}
         currentOrgId={currentOrgId}
         setCurrentOrgId={setCurrentOrgId}
         onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
-        onOpenLeaseModal={() => setIsLeaseModalOpen(true)}
-        onOpenWorkOrderModal={() => setIsWorkOrderModalOpen(true)}
-        onOpenVendorInvoiceModal={() => setIsVendorInvoiceModalOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onSeedDatabase={handleSeedDatabase}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
       />
 
-      <main>
-        {/* Hub Switcher */}
-        <HubSwitcher
+      <div className="app-main-viewport">
+        <Header
           activeHub={activeHub}
-          setActiveHub={handleSwitchHub}
-          tenantCount={leases.length}
-          vendorBillCount={vendorInvoices.length}
-          reqCount={requirements.length}
-          telemetry={telemetry}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          onOpenLeaseModal={() => setIsLeaseModalOpen(true)}
+          onOpenWorkOrderModal={() => setIsWorkOrderModalOpen(true)}
+          onOpenVendorInvoiceModal={() => setIsVendorInvoiceModalOpen(true)}
+          onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+          onSeedDatabase={handleSeedDatabase}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
         />
 
-        {/* Multi-Agent Operations Hubs wrapped in Suspense */}
-        <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading operational module...</div>}>
-          {activeHub === 'public' && (
-            <PublicListingsPortal
-              onOpenTourModal={(p) => {
-                setTourTargetProperty(p);
-                setIsTourModalOpen(true);
-              }}
-              onOpenApplyModal={(p) => {
-                setApplyTargetProperty(p);
-                setIsApplyModalOpen(true);
-              }}
-            />
-          )}
+        <main className="app-content">
+          {/* Dedicated Page Views wrapped in Suspense */}
+          <Suspense fallback={<div className="page-loading-skeleton"><span className="indicator-dot pulse-dot" style={{ background: 'var(--primary)' }}></span><span>Loading operational workspace...</span></div>}>
+            {activeHub === 'dashboard' && (
+              <div className="page-view-container">
+                <OperationalDashboardOverview currentOrgId={currentOrgId} />
+              </div>
+            )}
 
-          {activeHub === 'resident' && (
-            <ResidentPortal
-              onOpenPayModal={() => setIsPayModalOpen(true)}
-              currentOrgId={currentOrgId}
-            />
-          )}
+            {activeHub === 'tenant' && (
+              <div className="page-view-container">
+                <TenantARModule
+                  summary={summary}
+                  leases={leases}
+                  selectedLease={leases.find((l) => l.lease_id === selectedLeaseId)}
+                  activeCaseData={activeCaseData}
+                  isInvestigating={isInvestigating}
+                  onSelectLease={handleSelectLease}
+                  onInvestigateCase={handleInvestigateCase}
+                  onSubmitDecision={handleSubmitDecision}
+                  onRefreshWorldModel={handleRefreshWorldModel}
+                  onOpenInvestigationModal={() => setIsInvestigationModalOpen(true)}
+                  hasInvestigationResult={Boolean(investigationResult)}
+                />
+              </div>
+            )}
 
-          {activeHub === 'tenant' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <OperationalDashboardOverview currentOrgId={currentOrgId} />
-              <TenantARModule
-                summary={summary}
-                leases={leases}
-                selectedLease={leases.find((l) => l.lease_id === selectedLeaseId)}
-                activeCaseData={activeCaseData}
-                isInvestigating={isInvestigating}
-                onSelectLease={handleSelectLease}
-                onInvestigateCase={handleInvestigateCase}
-                onSubmitDecision={handleSubmitDecision}
-                onRefreshWorldModel={handleRefreshWorldModel}
-                onOpenInvestigationModal={() => setIsInvestigationModalOpen(true)}
-                hasInvestigationResult={Boolean(investigationResult)}
-              />
-            </div>
-          )}
+            {activeHub === 'vendor' && (
+              <div className="page-view-container">
+                <VendorAPModule
+                  vendorSummary={vendorSummary}
+                  vendorInvoices={vendorInvoices}
+                  vendors={vendors}
+                  selectedInvoiceId={selectedInvoiceId}
+                  walkthroughData={walkthroughData}
+                  isLoadingWalkthrough={isLoadingWalkthrough}
+                  onSelectInvoice={handleSelectInvoice}
+                  onOpenPayModal={(invId) => {
+                    setPayTargetInvoiceId(invId);
+                    setIsPayModalOpen(true);
+                  }}
+                  onResolveVendorBill={handleResolveVendorBill}
+                />
+              </div>
+            )}
 
-          {activeHub === 'vendor' && (
-            <VendorAPModule
-              vendorSummary={vendorSummary}
-              vendorInvoices={vendorInvoices}
-              vendors={vendors}
-              selectedInvoiceId={selectedInvoiceId}
-              walkthroughData={walkthroughData}
-              isLoadingWalkthrough={isLoadingWalkthrough}
-              onSelectInvoice={handleSelectInvoice}
-              onOpenPayModal={(invId) => {
-                setPayTargetInvoiceId(invId);
-                setIsPayModalOpen(true);
-              }}
-              onResolveVendorBill={handleResolveVendorBill}
-            />
-          )}
+            {activeHub === 'resident' && (
+              <div className="page-view-container">
+                <ResidentPortal
+                  onOpenPayModal={() => setIsPayModalOpen(true)}
+                  currentOrgId={currentOrgId}
+                />
+              </div>
+            )}
 
-          {activeHub === 'docintel' && (
-            <DocumentIntelligenceHub
-              currentOrgId={currentOrgId}
-              onSelectLease={(leaseId) => {
-                setActiveHub('tenant');
-                handleSelectLease(leaseId);
-              }}
-            />
-          )}
+            {activeHub === 'public' && (
+              <div className="page-view-container">
+                <PublicListingsPortal
+                  onOpenTourModal={(p) => {
+                    setTourTargetProperty(p);
+                    setIsTourModalOpen(true);
+                  }}
+                  onOpenApplyModal={(p) => {
+                    setApplyTargetProperty(p);
+                    setIsApplyModalOpen(true);
+                  }}
+                />
+              </div>
+            )}
 
-          {activeHub === 'saas' && (
-            <CustomerRequirementsPortal
-              requirements={requirements}
-              organizations={organizations}
-              onOpenSubmitRequirementModal={() => setIsSubmitReqModalOpen(true)}
-              onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
-              onUpvoteRequirement={handleUpvoteRequirement}
-            />
-          )}
+            {activeHub === 'compliance' && (
+              <div className="page-view-container">
+                <ComplianceRiskHub currentOrgId={currentOrgId} />
+              </div>
+            )}
 
-          {activeHub === 'compliance' && (
-            <ComplianceRiskHub currentOrgId={currentOrgId} />
-          )}
+            {activeHub === 'docintel' && (
+              <div className="page-view-container">
+                <DocumentIntelligenceHub
+                  currentOrgId={currentOrgId}
+                  onSelectLease={(leaseId) => {
+                    setActiveHub('tenant');
+                    handleSelectLease(leaseId);
+                  }}
+                />
+              </div>
+            )}
 
-          {activeHub === 'templates' && (
-            <CommunicationTemplatesHub currentOrgId={currentOrgId} />
-          )}
+            {activeHub === 'templates' && (
+              <div className="page-view-container">
+                <CommunicationTemplatesHub currentOrgId={currentOrgId} />
+              </div>
+            )}
 
-          {activeHub === 'admin' && (
-            <AdminDiagnosticsPortal />
-          )}
-        </Suspense>
-      </main>
+            {activeHub === 'saas' && (
+              <div className="page-view-container">
+                <CustomerRequirementsPortal
+                  requirements={requirements}
+                  organizations={organizations}
+                  onOpenSubmitRequirementModal={() => setIsSubmitReqModalOpen(true)}
+                  onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
+                  onUpvoteRequirement={handleUpvoteRequirement}
+                />
+              </div>
+            )}
+
+            {activeHub === 'admin' && (
+              <div className="page-view-container">
+                <AdminDiagnosticsPortal />
+              </div>
+            )}
+          </Suspense>
+        </main>
+      </div>
+    </div>
 
       {/* Global SaaS Modals wrapped in Suspense */}
       <Suspense fallback={null}>
@@ -642,6 +680,6 @@ export default function App() {
 
       {/* Persistent EQUILIBRA AI Assistant in lower-right corner */}
       <EquilibraAssistant />
-    </>
+    </div>
   );
 }

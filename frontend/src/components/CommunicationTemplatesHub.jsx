@@ -330,6 +330,8 @@ export default function CommunicationTemplatesHub({ currentOrgId = 'ORG-APEX' })
                 key={t.id}
                 onClick={() => loadTemplateDetail(t.id)}
                 style={{
+                  flexShrink: 0,
+                  minHeight: 'fit-content',
                   padding: '12px 14px',
                   borderRadius: 8,
                   backgroundColor: isSelected ? 'var(--bg-card-hover)' : 'var(--bg-inset)',

@@ -263,7 +263,7 @@ export default function VendorAPModule({
           </div>
 
           {/* Invoices List */}
-          <div className="lease-list" style={{ maxHeight: 420, overflowY: 'auto' }}>
+          <div className="lease-list">
             {filteredInvoices.length > 0 ? (
               filteredInvoices.map((invItem) => {
                 const isSelected = invItem.id === selectedInvoiceId;

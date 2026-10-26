@@ -807,7 +807,7 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>🔔 Official Notifications Feed</h3>
               <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {notifications.slice(0, 6).map((n) => (
-                  <div key={n.id} style={{ padding: 10, background: 'var(--surface-hover)', borderRadius: 6, fontSize: 12 }}>
+                  <div key={n.id} style={{ flexShrink: 0, padding: 10, background: 'var(--surface-hover)', borderRadius: 6, fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                       <span>{n.title}</span>
                       <span className="pill" style={{ fontSize: 9 }}>{n.status}</span>

@@ -175,7 +175,7 @@ export default function NewVendorInvoiceModal({
           {/* Line Items List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
             {lineItems.map((item, idx) => (
-              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 80px 100px 30px', gap: 6, alignItems: 'center' }}>
+              <div key={idx} style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: '2fr 80px 100px 30px', gap: 6, alignItems: 'center' }}>
                 <input
                   type="text"
                   value={item.description}

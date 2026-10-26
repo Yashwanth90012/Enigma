@@ -202,6 +202,7 @@ export default function InvestigationResultModal({
                   <div
                     key={i}
                     style={{
+                      flexShrink: 0,
                       fontSize: 11,
                       padding: '6px 10px',
                       background: 'var(--bg-card)',

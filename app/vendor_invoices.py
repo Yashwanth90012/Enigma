@@ -485,6 +485,101 @@ def seed_vendors_and_sample_invoices():
             ],
             'payment': None, # Unpaid / Pending property manager review!
             'bank_tx': None
+        },
+        # ORG-VERDANT / PROP-002 Invoices
+        {
+            'invoice_id': 'VINV-0021',
+            'vendor_id': 'VEND-001',
+            'work_order_id': 'WO-0021',
+            'lease_id': 'LEASE-0021',
+            'property_id': 'PROP-002',
+            'unit': '121',
+            'address': '710 Example Grove Avenue, Unit 121, Berkeley, CA 94704',
+            'issue_date': '2026-03-12',
+            'due_date': '2026-04-12',
+            'item_summary': 'Commercial Water Heater Pressure Relief Valve Replacement',
+            'items': [
+                {'description': 'Watts Temperature & Pressure Relief Valve 3/4"', 'qty': 1, 'unit_price': 85.00},
+                {'description': 'Plumber Dispatch & Diagnostic Labor (1.5 hrs)', 'qty': 1.5, 'unit_price': 90.00}
+            ],
+            'payment': {
+                'method': 'ach',
+                'ref': 'ACH-TR-88129',
+                'amount': 238.15,
+                'details': {'bank_name': 'First Republic', 'account_last4': '9012', 'trace': '88129'}
+            },
+            'bank_tx': {
+                'amount': 238.15,
+                'method': 'ach',
+                'ref': 'ACH-TR-88129',
+                'fee': 0.00
+            }
+        },
+        {
+            'invoice_id': 'VINV-0022',
+            'vendor_id': 'VEND-004',
+            'work_order_id': 'WO-0024',
+            'lease_id': 'LEASE-0024',
+            'property_id': 'PROP-002',
+            'unit': '124',
+            'address': '710 Example Grove Avenue, Unit 124, Berkeley, CA 94704',
+            'issue_date': '2026-04-01',
+            'due_date': '2026-05-01',
+            'item_summary': 'HVAC Rooftop Chiller Coil De-icing & Blower Inspection',
+            'items': [
+                {'description': 'Commercial High-MERV Chiller Filter Pack (x4)', 'qty': 4, 'unit_price': 42.00},
+                {'description': 'EPA Certified HVAC Diagnostic Labor (2.0 hrs)', 'qty': 2.0, 'unit_price': 110.00}
+            ],
+            'payment': None,
+            'bank_tx': None
+        },
+        # ORG-BEACON / PROP-003 Invoices
+        {
+            'invoice_id': 'VINV-0041',
+            'vendor_id': 'VEND-003',
+            'work_order_id': 'WO-0041',
+            'lease_id': 'LEASE-0041',
+            'property_id': 'PROP-003',
+            'unit': '141',
+            'address': '720 Example Grove Avenue, Unit 141, Berkeley, CA 94704',
+            'issue_date': '2026-02-18',
+            'due_date': '2026-03-18',
+            'item_summary': 'Plaza Common Corridor Emergency Exit Lighting & Ballasts',
+            'items': [
+                {'description': 'Dual-Lite Emergency LED Exit Light Fixture', 'qty': 2, 'unit_price': 120.00},
+                {'description': 'Commercial Electrician Service Call (2.0 hrs)', 'qty': 2.0, 'unit_price': 95.00}
+            ],
+            'payment': {
+                'method': 'check',
+                'ref': 'CHK-77401',
+                'amount': 466.56,
+                'details': {'check_number': '77401'}
+            },
+            'bank_tx': {
+                'amount': 466.56,
+                'method': 'check',
+                'ref': 'CHK-77401',
+                'fee': 0.00
+            }
+        },
+        # ORG-SKYLINE / PROP-004 Invoices
+        {
+            'invoice_id': 'VINV-0061',
+            'vendor_id': 'VEND-002',
+            'work_order_id': 'WO-0061',
+            'lease_id': 'LEASE-0061',
+            'property_id': 'PROP-004',
+            'unit': '161',
+            'address': '730 Example Grove Avenue, Unit 161, Berkeley, CA 94704',
+            'issue_date': '2026-03-25',
+            'due_date': '2026-04-25',
+            'item_summary': 'Modern Loft Shower Pan Regrouting & Silicone Sealing',
+            'items': [
+                {'description': 'Mold-Resistant Epoxy Tile Grout & Primer Kit', 'qty': 1, 'unit_price': 75.00},
+                {'description': 'Tile & Glaze Technician Labor (2.5 hrs)', 'qty': 2.5, 'unit_price': 70.00}
+            ],
+            'payment': None,
+            'bank_tx': None
         }
     ]
 

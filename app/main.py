@@ -90,6 +90,14 @@ async def performance_and_correlation_middleware(request: Request, call_next):
         perf_tracker.record_latency("http_endpoint", elapsed_ms, is_error=True)
         raise
 
+def resolve_effective_org(header_val: Any = None, query_val: Any = None) -> Optional[str]:
+    """Safely extracts and sanitizes organization ID, preventing FastAPI Header parameter objects from polluting SQL bindings."""
+    if isinstance(header_val, str) and header_val.strip() and header_val.strip().lower() not in ("null", "none"):
+        return header_val.strip()
+    if isinstance(query_val, str) and query_val.strip() and query_val.strip().lower() not in ("null", "none"):
+        return query_val.strip()
+    return None
+
 class CaseRequest(BaseModel):
     lease_id: str = Field(pattern=r'^LEASE-\d{4,}$')
     question: str = 'Why is this rent showing unpaid or discrepant?'
@@ -444,16 +452,31 @@ def ingest_work_order(req: IngestWorkOrderRequest):
     }
 
 @app.get('/api/portfolio/summary')
-def portfolio_summary():
+def portfolio_summary(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """High-level property portfolio financial metrics across all leases."""
+    effective_org = resolve_effective_org(x_organization_id, org_id)
     with db() as conn:
-        leases = conn.execute("""
-            SELECT l.lease_id, l.monthly_rent_usd, l.security_deposit_usd,
-                   COALESCE(a.state, 'pending') as approval_state
-            FROM lease_records l
-            LEFT JOIN approvals a ON l.lease_id = a.case_id
-            ORDER BY l.lease_id
-        """).fetchall()
+        if effective_org and effective_org != "all":
+            leases = conn.execute("""
+                SELECT l.lease_id, l.monthly_rent_usd, l.security_deposit_usd,
+                       COALESCE(a.state, 'pending') as approval_state
+                FROM lease_records l
+                JOIN properties p ON l.property_id = p.property_id
+                LEFT JOIN approvals a ON l.lease_id = a.case_id
+                WHERE p.org_id = %s
+                ORDER BY l.lease_id
+            """, (effective_org,)).fetchall()
+        else:
+            leases = conn.execute("""
+                SELECT l.lease_id, l.monthly_rent_usd, l.security_deposit_usd,
+                       COALESCE(a.state, 'pending') as approval_state
+                FROM lease_records l
+                LEFT JOIN approvals a ON l.lease_id = a.case_id
+                ORDER BY l.lease_id
+            """).fetchall()
 
         if not leases:
             # Fallback if seed has not been run on lease_records yet
@@ -514,10 +537,16 @@ def portfolio_summary():
         }
 
 @app.get('/api/leases')
-def get_leases_detailed(status_filter: Optional[str] = None, search: Optional[str] = None):
+def get_leases_detailed(
+    status_filter: Optional[str] = None,
+    search: Optional[str] = None,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """Retrieve full list of leases with tenant info, financial status, and work order metrics."""
+    effective_org = resolve_effective_org(x_organization_id, org_id)
     with db() as conn:
-        rows = conn.execute("""
+        query = """
             SELECT l.lease_id, l.property_id, l.unit, l.address, l.tenant1, l.tenant2,
                    l.contract_date, l.move_in_date, l.monthly_rent_usd, l.security_deposit_usd,
                    COALESCE(a.state, 'pending') as approval_state,
@@ -525,9 +554,15 @@ def get_leases_detailed(status_filter: Optional[str] = None, search: Optional[st
                    COALESCE(a.action, 'pending') as approval_action,
                    (SELECT count(*) FROM work_order_records w WHERE w.lease_id = l.lease_id) as wo_count
             FROM lease_records l
+            LEFT JOIN properties p ON l.property_id = p.property_id
             LEFT JOIN approvals a ON l.lease_id = a.case_id
-            ORDER BY l.lease_id ASC
-        """).fetchall()
+        """
+        params = []
+        if effective_org and effective_org != "all":
+            query += " WHERE p.org_id = %s"
+            params.append(effective_org)
+        query += " ORDER BY l.lease_id ASC"
+        rows = conn.execute(query, params).fetchall()
 
     results = []
     for r in rows:
@@ -848,8 +883,13 @@ def list_vendors():
     ]
 
 @app.get('/api/vendor-invoices')
-def list_vendor_invoices(status: Optional[str] = None):
+def list_vendor_invoices(
+    status: Optional[str] = None,
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """List vendor maintenance invoices with trade, work order link, payment status, and PDF status."""
+    effective_org = resolve_effective_org(x_organization_id, org_id)
     query = """
         SELECT vi.id, vi.vendor_id, v.name as vendor_name, v.trade, vi.work_order_id,
                vi.lease_id, vi.property_id, vi.invoice_number, vi.issue_date, vi.due_date,
@@ -858,13 +898,20 @@ def list_vendor_invoices(status: Optional[str] = None):
                vb.amount_usd as cleared_amount
         FROM vendor_invoices vi
         JOIN vendors v ON vi.vendor_id = v.vendor_id
+        LEFT JOIN properties p ON vi.property_id = p.property_id
         LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
         LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id
     """
+    conditions = []
     params = []
     if status:
-        query += " WHERE vi.status = %s"
+        conditions.append("vi.status = %s")
         params.append(status)
+    if effective_org and effective_org != "all":
+        conditions.append("p.org_id = %s")
+        params.append(effective_org)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY vi.issue_date DESC, vi.id DESC"
 
     with db() as conn:
@@ -1030,9 +1077,13 @@ def reconcile_vendor_invoice(invoice_id: str):
         raise HTTPException(500, f"Error reconciling vendor invoice {invoice_id}: {str(e)}")
 
 @app.get('/api/vendor-summary')
-def vendor_summary():
+def vendor_summary(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """Retrieve AP high-level metrics and discrepancy counts."""
-    return get_vendor_reconciliation_summary()
+    effective_org = resolve_effective_org(x_organization_id, org_id)
+    return get_vendor_reconciliation_summary(org_id=effective_org)
 
 @app.get('/api/saas/organizations')
 def get_saas_organizations():
@@ -1369,10 +1420,11 @@ def create_notification(req: QueueNotificationRequest):
 @app.get('/api/dashboard/overview')
 def get_dashboard_overview(
     org_id: Optional[str] = Query(None),
+    organization_id: Optional[str] = Query(None),
     x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
 ):
     """Aggregate real operational metrics across all autonomous agents for the main dashboard."""
-    effective_org = x_organization_id or org_id
+    effective_org = resolve_effective_org(x_organization_id, org_id or organization_id)
     from .resident_agent import get_expiring_leases
     from .maintenance_agent import check_sla_breaches
     from .vendor_agent import get_vendor_reconciliation_summary
@@ -1384,7 +1436,7 @@ def get_dashboard_overview(
     expiring = get_expiring_leases(window_days=90, org_id=effective_org)
 
     # 2. Financial & Rent Collection
-    port_sum = portfolio_summary()
+    port_sum = portfolio_summary(org_id=effective_org, x_organization_id=effective_org)
     total_leases_count = port_sum.get("total_leases", 0)
     reconciled_cnt = port_sum.get("reconciled_count", 0)
     total_invoiced = port_sum.get("total_rent_invoiced_usd", 0.0)
@@ -1425,18 +1477,37 @@ def get_dashboard_overview(
 
     # 3. Maintenance & SLA status
     with db() as conn:
-        open_wo_count = conn.execute(
-            "SELECT count(*) FROM work_order_records WHERE status NOT IN ('Completed', 'Closed')"
-        ).fetchone()[0]
-        emergency_count = conn.execute(
-            "SELECT count(*) FROM work_order_records WHERE priority = 'Emergency' AND status NOT IN ('Completed', 'Closed')"
-        ).fetchone()[0]
-        wo_rows = conn.execute("""
-            SELECT work_order_id, lease_id, category, priority, status, technician, reported_date
-            FROM work_order_records
-            WHERE status NOT IN ('Completed', 'Closed')
-            LIMIT 50
-        """).fetchall()
+        if effective_org and effective_org != "all":
+            open_wo_count = conn.execute("""
+                SELECT count(*) FROM work_order_records w
+                JOIN properties p ON w.property_id = p.property_id
+                WHERE w.status NOT IN ('Completed', 'Closed') AND p.org_id = %s
+            """, (effective_org,)).fetchone()[0]
+            emergency_count = conn.execute("""
+                SELECT count(*) FROM work_order_records w
+                JOIN properties p ON w.property_id = p.property_id
+                WHERE w.priority = 'Emergency' AND w.status NOT IN ('Completed', 'Closed') AND p.org_id = %s
+            """, (effective_org,)).fetchone()[0]
+            wo_rows = conn.execute("""
+                SELECT w.work_order_id, w.lease_id, w.category, w.priority, w.status, w.technician, w.reported_date
+                FROM work_order_records w
+                JOIN properties p ON w.property_id = p.property_id
+                WHERE w.status NOT IN ('Completed', 'Closed') AND p.org_id = %s
+                LIMIT 50
+            """, (effective_org,)).fetchall()
+        else:
+            open_wo_count = conn.execute(
+                "SELECT count(*) FROM work_order_records WHERE status NOT IN ('Completed', 'Closed')"
+            ).fetchone()[0]
+            emergency_count = conn.execute(
+                "SELECT count(*) FROM work_order_records WHERE priority = 'Emergency' AND status NOT IN ('Completed', 'Closed')"
+            ).fetchone()[0]
+            wo_rows = conn.execute("""
+                SELECT work_order_id, lease_id, category, priority, status, technician, reported_date
+                FROM work_order_records
+                WHERE status NOT IN ('Completed', 'Closed')
+                LIMIT 50
+            """).fetchall()
 
     sla_breaches = []
     now_dt = datetime.now(timezone.utc)
@@ -1462,13 +1533,24 @@ def get_dashboard_overview(
 
     # 4. Vendor AP & Invoices Aggregate Metrics
     with db() as conn:
-        v_agg = conn.execute("""
-            SELECT count(*),
-                   COALESCE(sum(total_usd), 0.0),
-                   count(*) FILTER (WHERE status != 'paid' AND status != 'cleared'),
-                   count(*) FILTER (WHERE status = 'needs_review' OR status = 'discrepancy')
-            FROM vendor_invoices
-        """).fetchone()
+        if effective_org and effective_org != "all":
+            v_agg = conn.execute("""
+                SELECT count(*),
+                       COALESCE(sum(vi.total_usd), 0.0),
+                       count(*) FILTER (WHERE vi.status != 'paid' AND vi.status != 'cleared'),
+                       count(*) FILTER (WHERE vi.status = 'needs_review' OR vi.status = 'discrepancy')
+                FROM vendor_invoices vi
+                LEFT JOIN properties p ON vi.property_id = p.property_id
+                WHERE p.org_id = %s
+            """, (effective_org,)).fetchone()
+        else:
+            v_agg = conn.execute("""
+                SELECT count(*),
+                       COALESCE(sum(total_usd), 0.0),
+                       count(*) FILTER (WHERE status != 'paid' AND status != 'cleared'),
+                       count(*) FILTER (WHERE status = 'needs_review' OR status = 'discrepancy')
+                FROM vendor_invoices
+            """).fetchone()
 
     vendor_sum = {
         "total_invoices": v_agg[0],
@@ -1484,8 +1566,21 @@ def get_dashboard_overview(
 
     # 6. Document Intelligence
     with db() as conn:
-        doc_count = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
-        chunk_count = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+        if effective_org and effective_org != "all":
+            doc_count = conn.execute("""
+                SELECT count(*) FROM documents d
+                LEFT JOIN properties p ON d.property_id = p.property_id
+                WHERE p.org_id = %s
+            """, (effective_org,)).fetchone()[0]
+            chunk_count = conn.execute("""
+                SELECT count(*) FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                LEFT JOIN properties p ON d.property_id = p.property_id
+                WHERE p.org_id = %s
+            """, (effective_org,)).fetchone()[0]
+        else:
+            doc_count = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+            chunk_count = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
 
     # 7. Notifications Stats
     recent_notifs = list_notifications(limit=100)
@@ -1501,26 +1596,55 @@ def get_dashboard_overview(
         "organization_id": effective_org or "all",
         "leases": {
             "total_leases": total_leases_count,
+            "total": total_leases_count,
             "reconciled_count": reconciled_cnt,
             "reconciled_rate": round(reconciled_cnt / max(1, total_leases_count) * 100, 1),
             "expiring_leases_count": len(expiring),
+            "expiring_next_90_days": len(expiring),
             "expiring_sample": expiring[:5],
             "total_rent_invoiced_usd": round(total_invoiced, 2),
             "total_variance_usd": round(total_variance, 2),
             "overdue_count": len(overdue_leases),
             "overdue_sample": overdue_leases[:5]
         },
+        "rent_collection": {
+            "total_invoiced_usd": round(total_invoiced, 2),
+            "total_variance_usd": round(total_variance, 2),
+            "flagged_discrepancies": len(overdue_leases),
+            "reconciled_count": reconciled_cnt
+        },
         "maintenance": {
             "total_open_work_orders": open_wo_count,
+            "open_count": open_wo_count,
             "emergency_work_orders": emergency_count,
+            "urgent_open": emergency_count,
             "sla_breaches_count": len(sla_breaches),
+            "breached_sla_count": len(sla_breaches),
             "sla_breaches": sla_breaches
         },
-        "vendor_ap": vendor_sum,
+        "vendor_ap": {
+            "total_invoices": vendor_sum["total_invoices"],
+            "total_billed_usd": vendor_sum["total_billed_usd"],
+            "pending_payment_usd": vendor_sum["pending_payment_usd"],
+            "discrepancy_total": vendor_sum["discrepancy_total"],
+            "disputed_count": vendor_sum["discrepancy_total"],
+            "matched_count": vendor_sum["matched_count"],
+            "unpaid_invoices_count": max(0, vendor_sum["total_invoices"] - vendor_sum["matched_count"]),
+            "uncashed_float_count": 0
+        },
         "compliance": {
             "summary": comp_sum,
+            "open_risks_count": comp_sum.get("total_findings", 0),
+            "critical_high_risks": comp_sum.get("high_priority_count", 0),
             "total_pending_approvals": len(pending_apps),
-            "pending_approvals": pending_apps[:5]
+            "pending_approvals": len(pending_apps),
+            "sample_approvals": pending_apps[:5]
+        },
+        "documents": {
+            "total_documents": doc_count,
+            "total_indexed_chunks": chunk_count,
+            "unverified_count": 0,
+            "status": "ready"
         },
         "document_intelligence": {
             "total_documents": doc_count,
@@ -1529,14 +1653,18 @@ def get_dashboard_overview(
         },
         "financial_data_source": {
             "configured_source": settings.finance_source,
+            "effective_source": settings.finance_source,
+            "status": "operational",
             "source_status": source_status,
             "lakehouse_connected": settings.finance_source == "zetaris",
-            "freshness": "Real-time transactional synchronization"
+            "freshness": datetime.now(timezone.utc).isoformat()
         },
         "notifications": {
+            "total_notifications": len(recent_notifs),
             "total_recent": len(recent_notifs),
             "failed_count": len(failed_notifs),
             "queued_count": len(queued_notifs),
+            "simulated": len(simulated_notifs),
             "simulated_count": len(simulated_notifs)
         }
     }
