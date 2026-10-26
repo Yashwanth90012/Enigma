@@ -844,10 +844,16 @@ def update_settings(req: SettingsUpdateRequest):
     if req.finance_source is not None:
         if req.finance_source not in ('fixture', 'zetaris'):
             raise HTTPException(400, "finance_source must be 'fixture' or 'zetaris'")
+        if req.finance_source == 'zetaris' and not settings.zetaris_api_key:
+            raise HTTPException(400, "ZETARIS_API_KEY is not configured in .env. Configure credentials in backend environment to use Zetaris.")
         settings.finance_source = req.finance_source
     if req.ai_provider is not None:
-        if req.ai_provider not in ('offline', 'meterless'):
-            raise HTTPException(400, "ai_provider must be 'offline' or 'meterless'")
+        if req.ai_provider not in ('offline', 'meterless', 'nim', 'auto'):
+            raise HTTPException(400, "ai_provider must be 'offline', 'meterless', 'nim', or 'auto'")
+        if req.ai_provider == 'meterless' and not settings.meterless_token:
+            raise HTTPException(400, "METERLESS_TOKEN is not configured in .env. Configure credentials in backend environment to use Meterless.")
+        if req.ai_provider == 'nim' and not settings.nvidia_nim_api_key:
+            raise HTTPException(400, "NVIDIA_NIM_API_KEY is not configured in .env. Configure credentials in backend environment to use NVIDIA NIM.")
         settings.ai_provider = req.ai_provider
     if req.meterless_model is not None:
         settings.meterless_model = req.meterless_model
@@ -855,6 +861,7 @@ def update_settings(req: SettingsUpdateRequest):
         settings.meterless_token = req.meterless_token
     if req.zetaris_api_key is not None:
         settings.zetaris_api_key = req.zetaris_api_key
+    return {"status": "updated", "settings": get_settings_status()}
 # =====================================================================
 # VENDOR MAINTENANCE & AP BILL RECONCILIATION ENDPOINTS
 # =====================================================================
@@ -2235,14 +2242,30 @@ class ZetarisQueryRequest(BaseModel):
 @app.get('/api/integrations/zetaris/metadata')
 def zetaris_metadata():
     """Discover visible catalogs, schemas, tables, and views in Zetaris."""
-    from .providers import ZetarisFinance
-    return ZetarisFinance().discover_metadata()
+    from .providers import ZetarisFinance, ZetarisQueryError, ZetarisConnectionError, ZetarisAuthError
+    z = ZetarisFinance()
+    if not z.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="ZETARIS_API_KEY is not configured in .env. Configure credentials in backend environment to use live Zetaris federation."
+        )
+    try:
+        return z.discover_metadata()
+    except (ZetarisQueryError, ZetarisConnectionError, ZetarisAuthError) as e:
+        raise HTTPException(status_code=502, detail=f"Zetaris federation error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Zetaris error: {str(e)}")
 
 @app.post('/api/integrations/zetaris/query')
 def zetaris_query(req: ZetarisQueryRequest):
     """Execute bounded read-only query against Zetaris federation."""
-    from .providers import ZetarisFinance, ZetarisPermissionError, ZetarisQueryError
+    from .providers import ZetarisFinance, ZetarisPermissionError, ZetarisQueryError, ZetarisConnectionError, ZetarisAuthError
     z = ZetarisFinance()
+    if not z.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="ZETARIS_API_KEY is not configured in .env. Configure credentials in backend environment to execute live Zetaris SQL queries."
+        )
     clean_sql = req.sql.strip().rstrip(';')
     if 'LIMIT' not in clean_sql.upper():
         clean_sql = f"{clean_sql} LIMIT {req.limit}"
@@ -2259,18 +2282,28 @@ def zetaris_query(req: ZetarisQueryRequest):
         }
     except ZetarisPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except ZetarisQueryError as e:
+    except (ZetarisQueryError, ZetarisAuthError) as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except (ZetarisConnectionError, Exception) as e:
         raise HTTPException(status_code=502, detail=f"Zetaris query error: {str(e)}")
 
 @app.post('/api/integrations/zetaris/bootstrap')
 def zetaris_bootstrap():
     """Ensure all required federated financial views are mounted in Zetaris."""
-    from .providers import ZetarisFinance
+    from .providers import ZetarisFinance, ZetarisQueryError, ZetarisConnectionError, ZetarisAuthError
     z = ZetarisFinance()
-    z.ensure_views_mounted(force=True)
-    return {"status": "success", "message": "Federated financial views mounted successfully."}
+    if not z.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="ZETARIS_API_KEY is not configured in .env. Configure credentials in backend environment to bootstrap Zetaris views."
+        )
+    try:
+        z.ensure_views_mounted(force=True)
+        return {"status": "success", "message": "Federated financial views mounted successfully."}
+    except (ZetarisQueryError, ZetarisConnectionError, ZetarisAuthError) as e:
+        raise HTTPException(status_code=502, detail=f"Zetaris bootstrap error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Zetaris bootstrap error: {str(e)}")
 
 @app.get('/api/integrations/embeddings/health')
 def embeddings_health():

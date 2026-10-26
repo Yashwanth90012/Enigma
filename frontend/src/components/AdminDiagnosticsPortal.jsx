@@ -29,7 +29,12 @@ export default function AdminDiagnosticsPortal() {
 
       if (schedRes.ok) setSchedulerStatus(await schedRes.json());
       if (zRes.ok) setZetarisStatus(await zRes.json());
-      if (zMetaRes.ok) setZetarisMeta(await zMetaRes.json());
+      if (zMetaRes.ok) {
+        setZetarisMeta(await zMetaRes.json());
+      } else {
+        const err = await zMetaRes.json().catch(() => ({}));
+        setZetarisMeta({ error: err.detail || 'Zetaris federation unconfigured or unreachable' });
+      }
       if (mRes.ok) setMeterlessStatus(await mRes.json());
       if (nimRes.ok) setNimStatus(await nimRes.json());
       if (aiRes.ok) setAiDiagnostics(await aiRes.json());
@@ -61,8 +66,13 @@ export default function AdminDiagnosticsPortal() {
     setIsBootstrapping(true);
     try {
       const res = await fetch('/api/integrations/zetaris/bootstrap', { method: 'POST' });
-      await fetchDiagnostics();
-      alert('Federated financial views mounted and refreshed in Zetaris Spark engine.');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(`Bootstrap failed: ${data.detail || 'Failed to mount views in Zetaris'}`);
+      } else {
+        await fetchDiagnostics();
+        alert('Federated financial views mounted and refreshed in Zetaris Spark engine.');
+      }
     } catch (err) {
       alert(`Bootstrap failed: ${err.message}`);
     } finally {
@@ -256,29 +266,35 @@ export default function AdminDiagnosticsPortal() {
         {/* View Badges */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>DISCOVERED FEDERATED VIEWS:</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {zetarisMeta?.views && Object.entries(zetarisMeta.views).map(([viewName, info]) => (
-              <div
-                key={viewName}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  fontSize: 11,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <span style={{ color: '#10b981', fontWeight: 700 }}>●</span>
-                <code style={{ fontWeight: 600 }}>{viewName}</code>
-                <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
-                  ({info.columns?.length || 0} cols)
-                </span>
-              </div>
-            ))}
-          </div>
+          {zetarisMeta?.error ? (
+            <div style={{ color: '#f59e0b', fontSize: 12, padding: '10px 14px', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 6, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+              ⚠️ {zetarisMeta.error}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {zetarisMeta?.views && Object.entries(zetarisMeta.views).map(([viewName, info]) => (
+                <div
+                  key={viewName}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 6,
+                    padding: '6px 10px',
+                    fontSize: 11,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span style={{ color: '#10b981', fontWeight: 700 }}>●</span>
+                  <code style={{ fontWeight: 600 }}>{viewName}</code>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                    ({info.columns?.length || 0} cols)
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Interactive Query Box */}

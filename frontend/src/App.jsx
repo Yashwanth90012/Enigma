@@ -23,7 +23,6 @@ const NewLeaseModal = lazy(() => import('./components/Modals/NewLeaseModal'));
 const NewWorkOrderModal = lazy(() => import('./components/Modals/NewWorkOrderModal'));
 const NewVendorInvoiceModal = lazy(() => import('./components/Modals/NewVendorInvoiceModal'));
 const PayBillModal = lazy(() => import('./components/Modals/PayBillModal'));
-const SettingsModal = lazy(() => import('./components/Modals/SettingsModal'));
 const InvestigationResultModal = lazy(() => import('./components/Modals/InvestigationResultModal'));
 const BookTourModal = lazy(() => import('./components/Modals/BookTourModal'));
 const RentalApplicationModal = lazy(() => import('./components/Modals/RentalApplicationModal'));
@@ -93,20 +92,12 @@ export default function App() {
   const [isVendorInvoiceModalOpen, setIsVendorInvoiceModalOpen] = useState(false);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [payTargetInvoiceId, setPayTargetInvoiceId] = useState(null);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isInvestigationModalOpen, setIsInvestigationModalOpen] = useState(false);
   const [investigationResult, setInvestigationResult] = useState(null);
   const [isTourModalOpen, setIsTourModalOpen] = useState(false);
   const [tourTargetProperty, setTourTargetProperty] = useState(null);
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
   const [applyTargetProperty, setApplyTargetProperty] = useState(null);
-  const [systemConfig, setSystemConfig] = useState({
-    finance_source: 'fixture',
-    zetaris_key: '',
-    ai_provider: 'offline',
-    meterless_model: 'nvidia/nemotron-4-340b-instruct',
-    meterless_token: ''
-  });
 
   // Helper fetcher with deduplication and caching
   const api = async (url, opts = {}) => {
@@ -436,31 +427,25 @@ export default function App() {
     }
   };
 
-  // Save Settings Config
-  const handleSaveConfig = async (cfg) => {
-    setSystemConfig(cfg);
-    alert('Cloud configuration updated.');
-  };
-
   return (
     <div className="app-layout-root">
       <div className="app-shell">
         <Sidebar
-        activeHub={activeHub}
-        setActiveHub={handleSwitchHub}
-        tenantCount={leases.length}
-        vendorBillCount={vendorInvoices.length}
-        reqCount={requirements.length}
-        telemetry={telemetry}
-        organizations={organizations}
-        currentOrgId={currentOrgId}
-        setCurrentOrgId={setCurrentOrgId}
-        onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-      />
+          activeHub={activeHub}
+          setActiveHub={handleSwitchHub}
+          tenantCount={leases.length}
+          vendorBillCount={vendorInvoices.length}
+          reqCount={requirements.length}
+          telemetry={telemetry}
+          organizations={organizations}
+          currentOrgId={currentOrgId}
+          setCurrentOrgId={setCurrentOrgId}
+          onOpenOnboardModal={() => setIsOnboardModalOpen(true)}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+        />
 
-      <div className="app-main-viewport">
+        <div className="app-main-viewport">
         <Header
           activeHub={activeHub}
           theme={theme}
@@ -468,7 +453,6 @@ export default function App() {
           onOpenLeaseModal={() => setIsLeaseModalOpen(true)}
           onOpenWorkOrderModal={() => setIsWorkOrderModalOpen(true)}
           onOpenVendorInvoiceModal={() => setIsVendorInvoiceModalOpen(true)}
-          onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
           onSeedDatabase={handleSeedDatabase}
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
@@ -646,15 +630,6 @@ export default function App() {
             invoiceId={payTargetInvoiceId}
             walkthroughData={walkthroughData}
             onPayInvoice={handlePayInvoice}
-          />
-        )}
-
-        {isSettingsModalOpen && (
-          <SettingsModal
-            isOpen={isSettingsModalOpen}
-            onClose={() => setIsSettingsModalOpen(false)}
-            config={systemConfig}
-            onSaveConfig={handleSaveConfig}
           />
         )}
 
