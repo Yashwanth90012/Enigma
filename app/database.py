@@ -27,14 +27,24 @@ class SimpleConnectionPool:
             conn = self._pool.get_nowait()
             if conn.closed:
                 conn = self._create_conn()
-            return conn
         except queue.Empty:
             with self._lock:
                 if self._created < self.max_connections:
                     self._created += 1
-                    return self._create_conn()
-            # Wait up to 10 seconds for an active connection to return
-            return self._pool.get(timeout=10.0)
+                    conn = self._create_conn()
+                else:
+                    conn = None
+            if conn is None:
+                # Wait up to 10 seconds for an active connection to return
+                conn = self._pool.get(timeout=10.0)
+
+        if not getattr(conn, "_vector_registered", False):
+            try:
+                register_vector(conn)
+                conn._vector_registered = True
+            except Exception:
+                pass
+        return conn
 
     def return_conn(self, conn: psycopg.Connection):
         if conn and not conn.closed:
@@ -56,8 +66,9 @@ class SimpleConnectionPool:
         conn = psycopg.connect(self.dsn, autocommit=False)
         try:
             register_vector(conn)
+            conn._vector_registered = True
         except Exception:
-            pass
+            conn._vector_registered = False
         return conn
 
 
@@ -89,6 +100,11 @@ def db():
 def init_database():
     with db() as conn:
         conn.execute('CREATE EXTENSION IF NOT EXISTS vector')
+        try:
+            register_vector(conn)
+            conn._vector_registered = True
+        except Exception:
+            pass
         conn.execute('''CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY, lease_id TEXT, property_id TEXT, kind TEXT NOT NULL,
             title TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now())''')

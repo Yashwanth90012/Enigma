@@ -33,6 +33,11 @@ ENIGMA eliminates these failure modes by combining:
 6. **Centralized Audit Trail & Responsive Email System:** Tamper-evident, sanitized audit logs paired with professional HTML email templates and live Gmail SMTP delivery.
 
 ---
+## Architecture Overview
+
+![architecture](ENIGMA_Architecture.png)
+
+---
 
 ## 🏛️ Comprehensive System Architecture
 
@@ -286,6 +291,7 @@ Services started:
 cd frontend
 npm install
 npm run dev
+npm run build
 ```
 Open **`http://localhost:5173`** in your browser.
 
