@@ -2492,24 +2492,31 @@ def trigger_compliance_scan_endpoint(
 class InvoiceApprovalOrchestrationRequest(BaseModel):
     invoice_id: str
     actor_role: Optional[str] = "property_manager"
+    org_id: Optional[str] = None
 
 class LeaseCrossValidationOrchestrationRequest(BaseModel):
     lease_id: str
+    org_id: Optional[str] = None
 
 class HabitabilityRiskRequest(BaseModel):
-    work_order_id: str
+    work_order_id: Optional[str] = None
+    lease_id: Optional[str] = None
+    jurisdiction: Optional[str] = "California"
+    org_id: Optional[str] = None
 
 @app.post('/api/orchestrator/workflows/invoice-approval')
 def orchestrate_invoice_approval_endpoint(
     req: InvoiceApprovalOrchestrationRequest,
+    org_id: Optional[str] = Query(None),
     x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
 ):
     """Execute end-to-end multi-agent invoice verification, 4-way matching, and approval orchestration."""
     from .assistant import execute_invoice_approval_orchestration
+    effective_org = resolve_effective_org(x_organization_id, req.org_id or org_id)
     try:
         res = execute_invoice_approval_orchestration(
             invoice_id=req.invoice_id,
-            org_id=x_organization_id,
+            org_id=effective_org,
             actor_role=req.actor_role or "property_manager"
         )
         return res
@@ -2525,14 +2532,16 @@ def orchestrate_invoice_approval_endpoint(
 @app.post('/api/orchestrator/workflows/lease-cross-validation')
 def orchestrate_lease_cross_validation_endpoint(
     req: LeaseCrossValidationOrchestrationRequest,
+    org_id: Optional[str] = Query(None),
     x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
 ):
     """Execute multi-agent lease document-to-ledger cross-validation and reconciliation."""
     from .assistant import execute_lease_cross_validation_orchestration
+    effective_org = resolve_effective_org(x_organization_id, req.org_id or org_id)
     try:
         res = execute_lease_cross_validation_orchestration(
             lease_id=req.lease_id,
-            org_id=x_organization_id
+            org_id=effective_org
         )
         return res
     except PermissionError as pe:
@@ -2547,14 +2556,16 @@ def orchestrate_lease_cross_validation_endpoint(
 @app.post('/api/orchestrator/workflows/habitability-risk')
 def assess_habitability_risk_endpoint(
     req: HabitabilityRiskRequest,
+    org_id: Optional[str] = Query(None),
     x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
 ):
     """Assess maintenance work order for emergency habitability failure and rent withholding risk."""
     from .maintenance_agent import assess_habitability_and_rent_risk
+    effective_org = resolve_effective_org(x_organization_id, req.org_id or org_id)
     try:
         decision = assess_habitability_and_rent_risk(
-            work_order_id=req.work_order_id,
-            org_id=x_organization_id
+            work_order_id=req.work_order_id or "WO-0001",
+            org_id=effective_org
         )
         return decision.model_dump()
     except PermissionError as pe:

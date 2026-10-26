@@ -9,7 +9,8 @@ export default function VendorAPModule({
   isLoadingWalkthrough,
   onSelectInvoice,
   onOpenPayModal,
-  onResolveVendorBill
+  onResolveVendorBill,
+  currentOrgId = 'ORG-APEX'
 }) {
   const [tradeFilter, setTradeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -28,16 +29,18 @@ export default function VendorAPModule({
     if (!selectedInvoiceId) return;
     setIsOrchestratingInvoice(true);
     setPipelineErr(null);
+    const effectiveOrg = currentOrgId || 'ORG-APEX';
     try {
       const res = await fetch('/api/orchestrator/workflows/invoice-approval', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Organization-Id': 'ORG-APEX'
+          'X-Organization-Id': effectiveOrg
         },
         body: JSON.stringify({
           invoice_id: selectedInvoiceId,
-          actor_role: 'property_manager'
+          actor_role: 'property_manager',
+          org_id: effectiveOrg
         })
       });
       if (!res.ok) {

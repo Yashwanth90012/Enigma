@@ -110,7 +110,11 @@ export default function App() {
 
   // Helper fetcher with deduplication and caching
   const api = async (url, opts = {}) => {
-    const res = await cachedFetch(url, opts);
+    const headers = {
+      'X-Organization-Id': currentOrgId || 'ORG-APEX',
+      ...(opts.headers || {})
+    };
+    const res = await cachedFetch(url, { ...opts, headers });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
     return data;
@@ -490,6 +494,7 @@ export default function App() {
                   onRefreshWorldModel={handleRefreshWorldModel}
                   onOpenInvestigationModal={() => setIsInvestigationModalOpen(true)}
                   hasInvestigationResult={Boolean(investigationResult)}
+                  currentOrgId={currentOrgId}
                 />
               </div>
             )}
@@ -509,6 +514,7 @@ export default function App() {
                     setIsPayModalOpen(true);
                   }}
                   onResolveVendorBill={handleResolveVendorBill}
+                  currentOrgId={currentOrgId}
                 />
               </div>
             )}

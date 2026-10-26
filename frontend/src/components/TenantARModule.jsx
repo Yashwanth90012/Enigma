@@ -11,7 +11,8 @@ export default function TenantARModule({
   onSubmitDecision,
   onRefreshWorldModel,
   onOpenInvestigationModal,
-  hasInvestigationResult
+  hasInvestigationResult,
+  currentOrgId = 'ORG-APEX'
 }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -65,14 +66,15 @@ export default function TenantARModule({
     if (!lease.lease_id) return;
     setIsCrossValidating(true);
     setCrossValidationErr(null);
+    const effectiveOrg = currentOrgId || lease.org_id || 'ORG-APEX';
     try {
       const res = await fetch('/api/orchestrator/workflows/lease-cross-validation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Organization-Id': 'ORG-APEX'
+          'X-Organization-Id': effectiveOrg
         },
-        body: JSON.stringify({ lease_id: lease.lease_id })
+        body: JSON.stringify({ lease_id: lease.lease_id, org_id: effectiveOrg })
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -91,16 +93,18 @@ export default function TenantARModule({
     if (!lease.lease_id) return;
     setIsAssessingHabitability(true);
     setHabitabilityErr(null);
+    const effectiveOrg = currentOrgId || lease.org_id || 'ORG-APEX';
     try {
       const res = await fetch('/api/orchestrator/workflows/habitability-risk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Organization-Id': 'ORG-APEX'
+          'X-Organization-Id': effectiveOrg
         },
         body: JSON.stringify({
           lease_id: lease.lease_id,
-          jurisdiction: 'California'
+          jurisdiction: 'California',
+          org_id: effectiveOrg
         })
       });
       if (!res.ok) {
