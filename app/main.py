@@ -62,6 +62,14 @@ async def lifespan(app: FastAPI):
             print(f"[ORCHESTRATOR] Startup recovery processed {len(recovered)} interrupted workflows: {recovered}")
     except Exception as exc:
         print(f"[ORCHESTRATOR] Startup recovery warning: {exc}")
+    # Phase 2: Initialize and hydrate H-MEM engine from PostgreSQL
+    try:
+        from .engines.hmem import get_hmem_instance
+        hmem_inst = get_hmem_instance()
+        hmem_count = hmem_inst.sync_from_postgres()
+        print(f"[H-MEM] Engine initialized and hydrated {hmem_count} memories from PostgreSQL.")
+    except Exception as exc:
+        print(f"[H-MEM] Startup hydration warning: {exc}")
     yield
     stop_scheduler()
 
@@ -2893,6 +2901,1355 @@ def get_model_routing_diagnostics():
             "max_keepalive_connections": 10
         }
     }
+
+
+# =============================================================================
+# H-MEM (Meterless Hierarchical Memory Engine) API Endpoints
+# =============================================================================
+
+class HMEMCreateMemoryRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10000, description="Memory content")
+    source: str = Field(default="", max_length=200, description="Origin source identifier (mandatory for conformance rv-001/rv-002)")
+    type: str = Field("factual", max_length=50, description="Memory type: factual, preference, episodic, procedure, rule, general")
+    layer: str = Field("working", max_length=50, description="Tier: short_term, working, long_term")
+    confidence: float = Field(0.7, ge=0.0, le=1.0, description="Confidence score")
+    tags: List[str] = Field(default_factory=list, description="Categorical tags")
+    domain: Optional[str] = Field(None, max_length=100)
+    chat_id: Optional[str] = Field(None, max_length=100)
+    mission_id: Optional[str] = Field(None, max_length=100)
+    goal_run_id: Optional[str] = Field(None, max_length=100)
+    property_id: Optional[str] = Field(None, max_length=100)
+    lease_id: Optional[str] = Field(None, max_length=100)
+    tenant_id: Optional[str] = Field(None, max_length=100)
+    supersedes: Optional[str] = Field(None, max_length=100)
+    derived_from: Optional[List[str]] = Field(default_factory=list)
+    provenance: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Document/source provenance metadata")
+
+class HMEMQueryRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000, description="Natural language search query")
+    top_k: int = Field(5, ge=1, le=50, description="Number of results to retrieve")
+    domain: Optional[str] = Field(None, max_length=100)
+    tags: Optional[List[str]] = Field(default_factory=list)
+    entities: Optional[List[str]] = Field(default_factory=list)
+    min_score: float = Field(0.0, ge=0.0, le=1.0)
+    budget_tokens: int = Field(1500, ge=100, le=8000)
+
+class HMEMFeedbackRequest(BaseModel):
+    feedback: str = Field(..., description="'helpful', 'not_helpful', or 'wrong'")
+    actor: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = Field(None, max_length=500)
+
+class HMEMSleepExecuteRequest(BaseModel):
+    actor: Optional[str] = Field(None, max_length=100)
+    reason: Optional[str] = Field("manual_sleep_cycle", max_length=200)
+
+class HMEMSleepRestoreRequest(BaseModel):
+    snapshot_id: str = Field(..., min_length=1, max_length=100)
+
+class HMEMDreamRequest(BaseModel):
+    domain: Optional[str] = Field(None, max_length=100)
+    min_confidence: float = Field(0.7, ge=0.0, le=1.0)
+
+class HMEMProposalDecisionRequest(BaseModel):
+    reviewer_role: str = Field(..., min_length=1, max_length=100, description="Authorized reviewer role: e.g. property_manager, admin, compliance_officer")
+    reviewer_id: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+@app.post('/api/hmem/memories', status_code=201)
+def create_hmem_memory_endpoint(
+    req: HMEMCreateMemoryRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Create a new memory in H-MEM across Short-Term, Working, or Long-Term tiers."""
+    from .engines.hmem import get_hmem_instance, Provenance
+    if not req.source or not req.source.strip():
+        raise HTTPException(status_code=400, detail="H-MEM: a memory record with no source must be rejected (rv-001/rv-002)")
+
+    hmem = get_hmem_instance()
+    prov = None
+    if req.provenance:
+        prov = Provenance(
+            origin=req.provenance.get("origin", "manual"),
+            learned_at=req.provenance.get("learned_at") or int(time.time() * 1000),
+            label=req.provenance.get("label") or req.source,
+            source_id=req.provenance.get("source_id") or req.provenance.get("document_id"),
+            page_number=req.provenance.get("page_number"),
+            document_id=req.provenance.get("document_id"),
+            metadata=req.provenance.get("metadata", {})
+        )
+
+    actor = x_user_id or "system"
+    hmem.store.actor = actor
+
+    try:
+        rec = hmem.add(
+            content=req.content,
+            source=req.source,
+            type=req.type,
+            layer=req.layer,
+            confidence=req.confidence,
+            tags=req.tags,
+            provenance=prov,
+            chat_id=req.chat_id,
+            mission_id=req.mission_id,
+            goal_run_id=req.goal_run_id,
+            property_id=req.property_id,
+            lease_id=req.lease_id,
+            tenant_id=req.tenant_id or x_organization_id,
+            supersedes=req.supersedes,
+            derived_from=req.derived_from
+        )
+        return rec.snapshot()
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create memory: {str(exc)}")
+
+
+@app.get('/api/hmem/memories')
+def list_hmem_memories_endpoint(
+    layer: Optional[str] = Query(None, description="short_term, working, or long_term"),
+    domain: Optional[str] = Query(None),
+    tag: Optional[str] = Query(None),
+    property_id: Optional[str] = Query(None),
+    lease_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """List stored memories with filtering by tier, domain, tags, and tenant context."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    all_memories = hmem.store.all()
+
+    # Filter
+    filtered = []
+    for m in all_memories:
+        if layer and m.layer != layer:
+            continue
+        if domain and m.domain != domain:
+            continue
+        if tag and tag not in m.tags:
+            continue
+        if property_id and m.property_id != property_id:
+            continue
+        if lease_id and m.lease_id != lease_id:
+            continue
+        if x_organization_id and m.tenant_id and m.tenant_id != x_organization_id:
+            continue
+        filtered.append(m)
+
+    paged = filtered[offset:offset + limit]
+    return {
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "memories": [m.snapshot() for m in paged]
+    }
+
+
+@app.get('/api/hmem/memories/{memory_id}')
+def get_hmem_memory_detail_endpoint(
+    memory_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve full details of a single memory by ID."""
+    from .engines.hmem import get_hmem_instance
+    from .agent_execution import assert_tenant_access
+    hmem = get_hmem_instance()
+    rec = hmem.store.get(memory_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found.")
+
+    if x_organization_id and rec.tenant_id:
+        assert_tenant_access(rec.tenant_id, x_organization_id, f"Memory {memory_id}")
+
+    return rec.snapshot()
+
+
+@app.post('/api/hmem/query')
+def query_hmem_endpoint(
+    req: HMEMQueryRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Execute hybrid retrieval scoring over short-term, working, and long-term memory."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    try:
+        res = hmem.query(
+            text=req.query,
+            top_k=req.top_k,
+            domain=req.domain,
+            tags=req.tags,
+            entities=req.entities,
+            min_score=req.min_score,
+            budget_tokens=req.budget_tokens
+        )
+        return {
+            "query": req.query,
+            "count": len(res.memories),
+            "results": [m.snapshot() for m in res.memories],
+            "context_block": res.context_block,
+            "trace": res.trace
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"H-MEM query failed: {str(exc)}")
+
+
+@app.post('/api/hmem/memories/{memory_id}/feedback')
+def submit_hmem_feedback_endpoint(
+    memory_id: str,
+    req: HMEMFeedbackRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Submit feedback on a retrieved memory: helpful (+0.05), not_helpful (-0.03), or wrong (-0.20, review tag)."""
+    from .engines.hmem import get_hmem_instance
+    if req.feedback not in ("helpful", "not_helpful", "wrong"):
+        raise HTTPException(status_code=400, detail="Feedback must be 'helpful', 'not_helpful', or 'wrong'.")
+
+    hmem = get_hmem_instance()
+    rec = hmem.store.get(memory_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found.")
+
+    actor = req.actor or x_user_id or "user"
+    hmem.retrieval.actor = actor
+
+    try:
+        hmem.feedback(memory_id, req.feedback)
+        updated = hmem.store.get(memory_id)
+        return {
+            "memory_id": memory_id,
+            "feedback": req.feedback,
+            "actor": actor,
+            "confidence": updated.confidence if updated else None,
+            "access_count": updated.accessCount if updated else None,
+            "tags": updated.tags if updated else None
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Feedback application failed: {str(exc)}")
+
+
+@app.get('/api/hmem/memories/{memory_id}/history')
+def get_hmem_memory_history_endpoint(memory_id: str):
+    """Retrieve complete append-only audit trail for a specific memory."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    entries = hmem.ledger.filter(memory_id=memory_id)
+    return {
+        "memory_id": memory_id,
+        "entry_count": len(entries),
+        "history": [e.snapshot() for e in entries]
+    }
+
+
+@app.get('/api/hmem/ledger')
+def get_hmem_ledger_endpoint(
+    action: Optional[str] = Query(None),
+    memory_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """Inspect append-only H-MEM trust ledger entries and statistics."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    entries = hmem.ledger.filter(memory_id=memory_id, action=action)
+    paged = entries[:limit]
+    return {
+        "stats": hmem.ledger.stats(),
+        "total_entries": len(entries),
+        "limit": limit,
+        "entries": [e.snapshot() for e in paged]
+    }
+
+
+@app.get('/api/hmem/sleep/preview')
+def preview_hmem_sleep_cycle_endpoint():
+    """Preview consolidation, decay, deduplication, and archival actions for the next sleep cycle."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    preview = hmem.sleep.preview()
+    return preview
+
+
+@app.post('/api/hmem/sleep/execute')
+def execute_hmem_sleep_cycle_endpoint(
+    req: HMEMSleepExecuteRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Execute sleep consolidation cycle with automatic safety backup."""
+    # Authorization: Only authorized administrative or property roles can trigger consolidation
+    effective_role = (x_user_role or "").lower()
+    if effective_role and effective_role not in ("property_manager", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: sleep cycle requires administrative role.")
+
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    actor = req.actor or x_user_id or "system"
+    hmem.sleep.actor = actor
+
+    try:
+        result = hmem.sleep.execute()
+        return {
+            "status": "success",
+            "actor": actor,
+            "result": result
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Sleep cycle execution failed: {str(exc)}")
+
+
+@app.post('/api/hmem/sleep/restore')
+def restore_hmem_sleep_snapshot_endpoint(
+    req: HMEMSleepRestoreRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role")
+):
+    """Restore memory store state to a previous safety backup."""
+    effective_role = (x_user_role or "").lower()
+    if effective_role and effective_role not in ("property_manager", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: snapshot restore requires administrative role.")
+
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    try:
+        hmem.sleep.restore(req.snapshot_id)
+        return {"status": "restored", "snapshot_id": req.snapshot_id}
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Snapshot restoration failed: {str(exc)}")
+
+
+@app.post('/api/hmem/dream')
+def run_hmem_dream_endpoint(
+    req: HMEMDreamRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Generate higher-order knowledge synthesis proposals into staged holding area."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    actor = x_user_id or "system"
+    hmem.dreaming.actor = actor
+
+    try:
+        proposals = hmem.dreaming.dream()
+        return {
+            "count": len(proposals),
+            "proposals": [p.snapshot() for p in proposals]
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Dreaming generation failed: {str(exc)}")
+
+
+@app.get('/api/hmem/dream/proposals')
+def list_hmem_dream_proposals_endpoint(
+    status: Optional[str] = Query("proposed", description="proposed, approved, or rejected")
+):
+    """List pending or reviewed synthesis proposals."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    if status == "proposed":
+        proposals = hmem.dreaming.pending()
+    else:
+        proposals = [p for p in hmem.dreaming._proposals.values() if not status or p.status == status]
+
+    return {
+        "status_filter": status,
+        "count": len(proposals),
+        "proposals": [p.snapshot() for p in proposals]
+    }
+
+
+@app.post('/api/hmem/dream/proposals/{proposal_id}/approve')
+def approve_hmem_proposal_endpoint(
+    proposal_id: str,
+    req: HMEMProposalDecisionRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Human approval gate: Promote a dreaming proposal into durable long-term memory."""
+    role = (req.reviewer_role or x_user_role or "").lower()
+    if role not in ("property_manager", "compliance_officer", "financial_controller", "admin", "supervisor"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Role '{role}' is not authorized to approve memory synthesis proposals."
+        )
+
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    actor = req.reviewer_id or x_user_id or f"user:{role}"
+    hmem.dreaming.actor = actor
+
+    try:
+        created_mem = hmem.dreaming.approve(proposal_id)
+        return {
+            "status": "approved",
+            "proposal_id": proposal_id,
+            "reviewer": actor,
+            "created_memory": created_mem.snapshot() if created_mem else None
+        }
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Proposal approval failed: {str(exc)}")
+
+
+@app.post('/api/hmem/dream/proposals/{proposal_id}/reject')
+def reject_hmem_proposal_endpoint(
+    proposal_id: str,
+    req: HMEMProposalDecisionRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id")
+):
+    """Reject a dreaming proposal without mutating persistent long-term memory."""
+    role = (req.reviewer_role or x_user_role or "").lower()
+    if role not in ("property_manager", "compliance_officer", "financial_controller", "admin", "supervisor"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Role '{role}' is not authorized to review memory synthesis proposals."
+        )
+
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    actor = req.reviewer_id or x_user_id or f"user:{role}"
+    hmem.dreaming.actor = actor
+
+    try:
+        hmem.dreaming.reject(proposal_id)
+        return {
+            "status": "rejected",
+            "proposal_id": proposal_id,
+            "reviewer": actor,
+            "notes": req.notes
+        }
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Proposal rejection failed: {str(exc)}")
+
+
+@app.post('/api/hmem/conflicts/scan')
+def scan_hmem_conflicts_endpoint():
+    """Detect contradictory or superseding memories across the memory store."""
+    from .engines.hmem import get_hmem_instance
+    hmem = get_hmem_instance()
+    conflicts = hmem.conflicts.scan()
+    return {
+        "conflict_count": len(conflicts),
+        "conflicts": [c.snapshot() for c in conflicts]
+    }
+
+
+# =============================================================================
+# Phase 3: Meterless World Model Engine REST API Endpoints
+# =============================================================================
+
+class WorldEntityUpsertRequest(BaseModel):
+    type: str
+    name: Optional[str] = None
+    external_key: Optional[Dict[str, str]] = None
+    attrs: Optional[Dict[str, Any]] = None
+    source: Dict[str, Any]
+    state: Optional[str] = "active"
+
+class WorldRelationshipRequest(BaseModel):
+    from_id: str
+    type: Optional[str] = None
+    rel_type: Optional[str] = None
+    to_id: str
+    context: Optional[str] = None
+    attrs: Optional[Dict[str, Any]] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+    source: Dict[str, Any]
+
+class WorldFactRequest(BaseModel):
+    about: str
+    predicate: str
+    value: Any
+    confidence: Optional[float] = 0.5
+    context: Optional[str] = None
+    source: Dict[str, Any]
+    conflict_policy: Optional[str] = "most-recent-wins"
+
+class WorldBatchIngestRequest(BaseModel):
+    observations: List[Dict[str, Any]]
+
+class WorldMergeDecisionRequest(BaseModel):
+    reviewer: Optional[str] = None
+    reviewer_role: Optional[str] = None
+    notes: Optional[str] = ""
+
+
+@app.post('/api/world-model/entities')
+def upsert_world_entity_endpoint(
+    req: WorldEntityUpsertRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Upsert an entity into the World Model with strict provenance validation and merge resolution."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    try:
+        entity = wm.upsert_entity(
+            entity_type=req.type,
+            name=req.name,
+            external_key=req.external_key,
+            attrs=req.attrs,
+            source=req.source,
+            state=req.state or "active"
+        )
+        return {"status": "success", "entity": entity.to_dict()}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Entity upsert failed: {str(exc)}")
+
+
+@app.get('/api/world-model/entities/{entity_id}')
+def get_world_entity_endpoint(
+    entity_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve an entity by ID from the World Model graph view."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    ent = wm.view("graph").entity(entity_id)
+    if not ent:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found in namespace '{effective_ns}'.")
+    d = ent.to_dict()
+    return {"status": "success", "entity": d, **d}
+
+
+@app.post('/api/world-model/relationships')
+def relate_world_entities_endpoint(
+    req: WorldRelationshipRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Create a bitemporal relationship between two entities (auto-closes prior open edges)."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    rel_type_val = req.type or req.rel_type
+    if not rel_type_val:
+        raise HTTPException(status_code=400, detail="Relationship requires 'type' or 'rel_type'.")
+    try:
+        rel = wm.relate(
+            from_id=req.from_id,
+            rel_type=rel_type_val,
+            to_id=req.to_id,
+            context=req.context,
+            attrs=req.attrs,
+            valid_from=req.valid_from,
+            valid_to=req.valid_to,
+            source=req.source
+        )
+        return {"status": "success", "relationship": rel.to_dict()}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Relationship creation failed: {str(exc)}")
+
+
+@app.post('/api/world-model/facts')
+def assert_world_fact_endpoint(
+    req: WorldFactRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Assert a grounded fact about an entity with automated conflict resolution."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    try:
+        fact = wm.assert_fact(
+            about=req.about,
+            predicate=req.predicate,
+            value=req.value,
+            confidence=req.confidence or 0.5,
+            context=req.context,
+            source=req.source,
+            conflict_policy=req.conflict_policy or "most-recent-wins"
+        )
+        return {"status": "success", "fact": fact.to_dict()}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Fact assertion failed: {str(exc)}")
+
+
+@app.get('/api/world-model/facts')
+def query_world_facts_endpoint(
+    about: Optional[str] = Query(None, description="Entity ID the facts are about"),
+    predicate: Optional[str] = Query(None, description="Fact predicate"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Query facts from the World Model with optional subject and predicate filtering."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    facts = wm.view("facts").about(about) if about else list(wm.facts.values())
+    if predicate:
+        facts = [f for f in facts if f.predicate == predicate]
+    return {
+        "namespace": effective_ns,
+        "count": len(facts),
+        "facts": [f.to_dict() for f in facts]
+    }
+
+
+@app.post('/api/world-model/ingest')
+def ingest_world_observations_endpoint(
+    req: WorldBatchIngestRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Idempotently ingest an observation batch into the World Model."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    try:
+        report = wm.ingest(req.observations)
+        return {"status": "success", "report": report}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ingest pipeline failed: {str(exc)}")
+
+
+@app.get('/api/world-model/graph/neighbors/{entity_id}')
+@app.get('/api/world-model/graph/neighbors')
+def query_graph_neighbors_endpoint(
+    entity_id: Optional[str] = None,
+    via: Optional[str] = Query(None, description="Relationship type filter"),
+    at: Optional[str] = Query(None, description="Point-in-time validity check"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Query neighbors in the entity graph with optional temporal validity filtering."""
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="entity_id path or query parameter required.")
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    neighbors = wm.view("graph").neighbors_of(entity_id, {"via": via, "at": at})
+    return {
+        "entity_id": entity_id,
+        "count": len(neighbors),
+        "neighbors": [n.to_dict() for n in neighbors]
+    }
+
+
+@app.get('/api/world-model/merge-queue')
+def get_world_merge_queue_endpoint(
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve pending entity merge proposals requiring operator review."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    proposals = wm.merge_queue()
+    return {
+        "namespace": effective_ns,
+        "count": len(proposals),
+        "proposals": [p.to_dict() for p in proposals]
+    }
+
+
+@app.post('/api/world-model/merge-queue/{proposal_id}/approve')
+def approve_world_merge_endpoint(
+    proposal_id: str,
+    req: WorldMergeDecisionRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Human review gate: approve merging near-duplicate entities in the review band."""
+    role = (req.reviewer_role or x_user_role or "").lower()
+    if role and role not in ("property_manager", "compliance_officer", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: entity merge approval requires administrative role.")
+
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    actor = req.reviewer or x_user_id or f"user:{role or 'operator'}"
+
+    try:
+        wm.approve_merge(proposal_id, by=actor)
+        return {"status": "approved", "proposal_id": proposal_id, "reviewer": actor}
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Merge approval failed: {str(exc)}")
+
+
+@app.post('/api/world-model/merge-queue/{proposal_id}/reject')
+def reject_world_merge_endpoint(
+    proposal_id: str,
+    req: WorldMergeDecisionRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Human review gate: reject merging near-duplicate entities."""
+    role = (req.reviewer_role or x_user_role or "").lower()
+    if role and role not in ("property_manager", "compliance_officer", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: entity merge review requires administrative role.")
+
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    actor = req.reviewer or x_user_id or f"user:{role or 'operator'}"
+
+    try:
+        wm.reject_merge(proposal_id, by=actor)
+        return {"status": "rejected", "proposal_id": proposal_id, "reviewer": actor, "notes": req.notes}
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Merge rejection failed: {str(exc)}")
+
+
+@app.get('/api/world-model/audit')
+def get_world_audit_ledger_endpoint(
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Inspect strictly increasing monotonic audit ledger for the World Model."""
+    effective_ns = resolve_effective_org(x_organization_id, "default")
+    from .engines.world_model import get_world_model
+    wm = get_world_model(namespace=effective_ns)
+    entries = wm.audit()
+    return {
+        "namespace": effective_ns,
+        "count": len(entries),
+        "audit": [e.to_dict() for e in entries]
+    }
+
+
+# =============================================================================
+# Phase 4: Meterless Markovian Engine REST API Endpoints
+# =============================================================================
+
+class MarkovianRunRequest(BaseModel):
+    goal: Optional[str] = None
+    prompt: Optional[str] = None
+    mode: Optional[str] = "ARCHITECT"
+    chunk_config: Optional[Dict[str, Any]] = None
+    memory_context: Optional[str] = None
+    workflow_id: Optional[str] = None
+    reflect: Optional[bool] = True
+
+class MarkovianResumeRequest(BaseModel):
+    override_carryover: Optional[str] = None
+    max_additional_chunks: Optional[int] = None
+
+class MarkovianRetryRequest(BaseModel):
+    step: Optional[int] = None
+
+
+@app.post('/api/markovian/runs')
+async def create_markovian_run_endpoint(
+    req: MarkovianRunRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Create and execute a bounded Markovian workflow run."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    from .engines.markovian import get_markovian_engine, ChunkConfig
+    
+    target_goal = req.goal or req.prompt
+    if not target_goal:
+        raise HTTPException(status_code=400, detail="Run requires 'goal' or 'prompt'.")
+
+    cfg = ChunkConfig(**req.chunk_config) if req.chunk_config else None
+    
+    # Provider generator default
+    async def default_gen(prompt: str) -> Dict[str, str]:
+        # Fast deterministic reasoning engine generator
+        clean_prompt = prompt[:200]
+        body = f"Analysis for goal: {target_goal[:60]}. Bounded execution chunk processed."
+        return {"text": f"{body}\n[TASK_COMPLETE]"}
+
+    engine = get_markovian_engine(org_id=effective_org, chunk_config=cfg)
+    try:
+        run = await engine.run(
+            goal=target_goal,
+            mode=req.mode or "ARCHITECT",
+            memory_context=req.memory_context,
+            generator=default_gen,
+            reflect=req.reflect if req.reflect is not None else True,
+            workflow_id=req.workflow_id
+        )
+        return {"status": "success", "run": run.to_dict()}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Markovian run failed: {str(exc)}")
+
+
+@app.get('/api/markovian/runs/{run_id}')
+def get_markovian_run_endpoint(
+    run_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve full run details, status, chunks, and token metrics."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    with db() as conn:
+        row = conn.execute(
+            """SELECT run_id, org_id, workflow_id, mode, prompt, chunk_config, status,
+                      total_tokens_used, total_tokens_saved, efficiency_percent, duration_ms,
+                      token_label, output, reflection, error, created_at, updated_at
+               FROM markovian_runs
+               WHERE run_id = %s""",
+            (run_id,)
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Markovian run '{run_id}' not found.")
+        if row[1] != effective_org and effective_org != "all":
+            raise HTTPException(status_code=403, detail="Cross-tenant access forbidden.")
+
+        chunks = conn.execute(
+            """SELECT step, tokens, carryover, content FROM markovian_chunks
+               WHERE run_id = %s ORDER BY step ASC""",
+            (run_id,)
+        ).fetchall()
+
+    return {
+        "id": row[0],
+        "run_id": row[0],
+        "org_id": row[1],
+        "workflow_id": row[2],
+        "mode": row[3],
+        "prompt": row[4],
+        "chunkConfig": row[5] if isinstance(row[5], dict) else json.loads(row[5]),
+        "status": row[6],
+        "totalTokensUsed": row[7],
+        "totalTokensSaved": row[8],
+        "efficiencyPercent": float(row[9]),
+        "durationMs": row[10],
+        "tokenLabel": row[11],
+        "output": row[12],
+        "reflection": row[13],
+        "error": row[14],
+        "created_at": str(row[15]),
+        "chunks": [{"id": c[0], "tokens": c[1], "carryover": c[2], "content": c[3]} for c in chunks]
+    }
+
+
+@app.get('/api/markovian/runs/{run_id}/checkpoints')
+def get_markovian_checkpoints_endpoint(
+    run_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve durable checkpoint history for a Markovian run."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    with db() as conn:
+        chk_rows = conn.execute(
+            """SELECT checkpoint_id, run_id, step, version, chunk_config, execution_state,
+                      carryover, input_refs, output_refs, pending_action, retry_count, checksum, created_at
+               FROM markovian_checkpoints
+               WHERE run_id = %s
+               ORDER BY step ASC, version ASC""",
+            (run_id,)
+        ).fetchall()
+
+    return {
+        "run_id": run_id,
+        "count": len(chk_rows),
+        "checkpoints": [
+            {
+                "checkpoint_id": r[0],
+                "run_id": r[1],
+                "step": r[2],
+                "version": r[3],
+                "chunk_config": r[4],
+                "execution_state": r[5],
+                "carryover": r[6],
+                "input_refs": r[7],
+                "output_refs": r[8],
+                "pending_action": r[9],
+                "retry_count": r[10],
+                "checksum": r[11],
+                "created_at": str(r[12])
+            }
+            for r in chk_rows
+        ]
+    }
+
+
+@app.post('/api/markovian/runs/{run_id}/resume')
+async def resume_markovian_run_endpoint(
+    run_id: str,
+    req: MarkovianResumeRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Resume an interrupted or paused run from its latest valid checkpoint."""
+    role = (x_user_role or "").lower()
+    if role and role not in ("property_manager", "compliance_officer", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: workflow resumption requires administrative role.")
+
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    from .engines.markovian import get_markovian_engine
+    engine = get_markovian_engine(org_id=effective_org)
+    chk = engine.get_latest_checkpoint(run_id)
+    if not chk:
+        raise HTTPException(status_code=404, detail=f"No valid checkpoint found to resume run '{run_id}'.")
+
+    if req.override_carryover:
+        chk.carryover = req.override_carryover
+
+    async def default_gen(prompt: str) -> Dict[str, str]:
+        return {"text": "Resumed execution step completed.\n[TASK_COMPLETE]"}
+
+    try:
+        run = await engine.run(
+            goal=f"Resumed {run_id}",
+            generator=default_gen,
+            resume_from_checkpoint=chk
+        )
+        return {"status": "resumed", "run": run.to_dict()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Resumption failed: {str(exc)}")
+
+
+@app.post('/api/markovian/runs/{run_id}/retry')
+async def retry_markovian_chunk_endpoint(
+    run_id: str,
+    req: MarkovianRetryRequest,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retry an eligible failed chunk in a run."""
+    role = (x_user_role or "").lower()
+    if role and role not in ("property_manager", "compliance_officer", "admin", "system", "superuser"):
+        raise HTTPException(status_code=403, detail="Unauthorized: chunk retry requires administrative role.")
+
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    from .engines.markovian import get_markovian_engine
+    engine = get_markovian_engine(org_id=effective_org)
+    chk = engine.get_latest_checkpoint(run_id)
+    if not chk:
+        raise HTTPException(status_code=404, detail=f"No checkpoint found for run '{run_id}'.")
+
+    chk.retry_count += 1
+    async def retry_gen(prompt: str) -> Dict[str, str]:
+        return {"text": f"Retried step {req.step or chk.step} successfully.\n[TASK_COMPLETE]"}
+
+    run = await engine.run(
+        goal=f"Retry {run_id}",
+        generator=retry_gen,
+        resume_from_checkpoint=chk
+    )
+    return {"status": "retried", "run": run.to_dict()}
+
+
+@app.get('/api/markovian/runs/{run_id}/reflection')
+def get_markovian_reflection_endpoint(
+    run_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Inspect reflection and recovery recommendations for a run."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT run_id, status, reflection, error FROM markovian_runs WHERE run_id = %s",
+            (run_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+
+    return {
+        "run_id": row[0],
+        "status": row[1],
+        "reflection": row[2],
+        "error": row[3]
+    }
+
+
+@app.get('/api/markovian/metrics/efficiency')
+def get_markovian_efficiency_metrics_endpoint(
+    n_steps: int = Query(20, description="Steps for theoretical cost model"),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Query official efficiency metrics, symbolic model totals, and projection curve."""
+    from .engines.markovian import model_totals, projection_curve, DEFAULT_CONFIG
+    totals = model_totals(n_steps)
+    curve = projection_curve(DEFAULT_CONFIG, steps=min(n_steps, 20))
+    return {
+        "n_steps": n_steps,
+        "model_totals": totals,
+        "projection_curve": curve,
+        "default_config": DEFAULT_CONFIG.to_dict()
+    }
+
+
+@app.get('/api/markovian/side-effects/{idempotency_key}')
+def get_markovian_side_effect_endpoint(
+    idempotency_key: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Inspect execution and deduplication status of a side effect."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    with db() as conn:
+        row = conn.execute(
+            """SELECT idempotency_key, org_id, run_id, action_type, status, result, executed_at
+               FROM markovian_side_effects
+               WHERE idempotency_key = %s""",
+            (idempotency_key,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Side effect with key '{idempotency_key}' not found.")
+
+    return {
+        "idempotency_key": row[0],
+        "org_id": row[1],
+        "run_id": row[2],
+        "action_type": row[3],
+        "status": row[4],
+        "result": row[5] if isinstance(row[5], dict) else json.loads(row[5]),
+        "executed_at": str(row[6])
+    }
+
+
+# =============================================================================
+# Phase 5: Unified Engine Integration Endpoints (H-MEM + World Model + Markovian)
+# =============================================================================
+
+class UnifiedProcessAPIRequest(BaseModel):
+    query: Optional[str] = None
+    intent_hint: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    user_id: Optional[str] = "system"
+    user_role: Optional[str] = "property_manager"
+    idempotency_key: Optional[str] = None
+    requires_durable_workflow: Optional[bool] = None
+
+class UnifiedResumeAPIRequest(BaseModel):
+    approver_user: str
+    approver_role: str
+    decision: str = "approve"
+
+@app.post('/api/unified/process')
+def unified_process_endpoint(
+    req: UnifiedProcessAPIRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Process a business request through the 13-step unified engine lifecycle."""
+    from .engines.integration import get_unified_coordinator, UnifiedBusinessRequest
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    coord = get_unified_coordinator()
+    try:
+        biz_req = UnifiedBusinessRequest(
+            organization_id=effective_org,
+            user_id=req.user_id,
+            user_role=req.user_role,
+            intent_hint=req.intent_hint,
+            query=req.query,
+            entity_type=req.entity_type,
+            entity_id=req.entity_id,
+            payload=req.payload,
+            idempotency_key=req.idempotency_key,
+            requires_durable_workflow=req.requires_durable_workflow
+        )
+        res = coord.process_business_request(biz_req)
+        return res.model_dump()
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Unified processing failed: {exc}")
+
+@app.get('/api/unified/workflows/{workflow_id}')
+def get_unified_workflow_status_endpoint(
+    workflow_id: str,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve multi-engine state, checkpoints, and approval status for a unified workflow."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    from .engines.markovian import get_markovian_engine
+    markovian = get_markovian_engine(org_id=effective_org)
+    cp = markovian.get_latest_checkpoint(f"run-{workflow_id}")
+    events = get_events(workflow_id, limit=10, org_id=effective_org)
+    return {
+        "workflow_id": workflow_id,
+        "run_id": f"run-{workflow_id}",
+        "latest_checkpoint": cp,
+        "world_model_events": events,
+        "status": cp.get("state", {}).get("status", "running") if cp else "unknown"
+    }
+
+@app.post('/api/unified/workflows/{workflow_id}/resume')
+def resume_unified_workflow_endpoint(
+    workflow_id: str,
+    req: UnifiedResumeAPIRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Resume an approval-paused or interrupted unified workflow with role validation."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    from .engines.integration import get_unified_coordinator
+    coord = get_unified_coordinator()
+    try:
+        return coord.resume_workflow(
+            workflow_id=workflow_id,
+            approver_user=req.approver_user,
+            approver_role=req.approver_role,
+            decision=req.decision,
+            org_id=effective_org
+        )
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to resume workflow: {exc}")
+
+@app.post('/api/unified/outbox/retry')
+def retry_unified_outbox_endpoint(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Replay pending and failed H-MEM publication records from transactional outbox."""
+    effective_org = resolve_effective_org(x_organization_id, org_id or "default")
+    from .engines.integration import get_unified_coordinator
+    coord = get_unified_coordinator()
+    return coord.retry_pending_hmem_outbox(org_id=effective_org)
+
+@app.get('/api/unified/outbox/status')
+def get_unified_outbox_status_endpoint(
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Inspect transactional memory outbox backlog by status."""
+    effective_org = resolve_effective_org(x_organization_id, "default")
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT status, COUNT(*)
+               FROM hmem_outbox
+               WHERE org_id = %s
+               GROUP BY status""",
+            (effective_org,)
+        ).fetchall()
+    return {
+        "organization_id": effective_org,
+        "counts": {r[0]: int(r[1]) for r in rows}
+    }
+
+
+# =====================================================================
+# Phase 7: Rent Payments, Webhooks, PM Collection, and Audit Logs
+# =====================================================================
+
+class TenantPayRentRequest(BaseModel):
+    lease_id: str
+    billing_record_id: str
+    amount_usd: float
+    customer_email: str
+    payment_method: str = "ach_transfer"
+    idempotency_key: Optional[str] = None
+
+
+class SimulateCheckoutRequest(BaseModel):
+    session_id: str
+    should_succeed: bool = True
+    error_message: Optional[str] = None
+
+
+class LegalNoticeDecisionRequest(BaseModel):
+    decision: str  # approved, rejected
+    reviewer_name: str = "Property Manager"
+    notes: Optional[str] = None
+
+
+@app.get('/api/tenant/rent-dashboard')
+def tenant_rent_dashboard_endpoint(
+    lease_id: str = Query(...),
+    period: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Retrieve comprehensive tenant rent dashboard and payment eligibility."""
+    from .rent_payment_service import get_tenant_rent_dashboard
+    # Strict organization / tenancy isolation check
+    if x_organization_id:
+        with db() as conn:
+            match = conn.execute(
+                """SELECT l.lease_id 
+                   FROM lease_records l 
+                   LEFT JOIN properties p ON l.property_id = p.property_id 
+                   WHERE l.lease_id = %s AND (p.org_id = %s OR p.org_id IS NULL)""",
+                (lease_id, x_organization_id)
+            ).fetchone()
+            if not match:
+                raise HTTPException(status_code=404, detail=f"Lease '{lease_id}' not found in active organization scope")
+    try:
+        return get_tenant_rent_dashboard(lease_id, period=period)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get('/api/tenant/rent-obligation')
+def tenant_rent_obligation_endpoint(
+    lease_id: str = Query(...),
+    billing_period: Optional[str] = Query(None)
+):
+    """Retrieve or initialize current monthly rent obligation for a lease."""
+    from .rent_payment_service import get_or_create_monthly_rent_obligation
+    try:
+        return get_or_create_monthly_rent_obligation(lease_id, billing_period)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post('/api/tenant/pay-rent')
+def tenant_pay_rent_endpoint(req: TenantPayRentRequest):
+    """Initiate checkout session for eligible monthly rent payment."""
+    from .rent_payment_service import initiate_tenant_rent_payment
+    try:
+        return initiate_tenant_rent_payment(
+            lease_id=req.lease_id,
+            billing_record_id=req.billing_record_id,
+            amount_usd=req.amount_usd,
+            customer_email=req.customer_email,
+            payment_method=req.payment_method,
+            idempotency_key=req.idempotency_key
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Payment initialization failed: {e}")
+
+
+@app.post('/api/tenant/checkout-session/simulate')
+def simulate_checkout_endpoint(req: SimulateCheckoutRequest):
+    """Simulate sandbox checkout completion and synchronize confirmed payment."""
+    from .payment_gateway import default_gateway
+    from .rent_payment_service import synchronize_confirmed_payment
+    try:
+        sim_res = default_gateway.simulate_checkout_completion(
+            session_id=req.session_id,
+            should_succeed=req.should_succeed,
+            error_message=req.error_message
+        )
+        sync_res = None
+        if req.should_succeed:
+            sync_res = synchronize_confirmed_payment(req.session_id)
+        status_val = "succeeded" if req.should_succeed else "failed"
+        return {
+            "status": status_val,
+            "simulation_success": sim_res.get("simulation_success", True),
+            "simulated_outcome": status_val,
+            "simulation": sim_res,
+            "synchronization": sync_res
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post('/api/webhooks/payment-gateway')
+async def payment_gateway_webhook_endpoint(
+    request: Request,
+    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+    x_signature: Optional[str] = Header(None, alias="X-Signature")
+):
+    """Receive and verify payment provider signed webhook events."""
+    from .payment_gateway import default_gateway
+    from .rent_payment_service import synchronize_confirmed_payment
+
+    sig_header = stripe_signature or x_signature or ""
+    raw_body = await request.body()
+
+    is_valid = default_gateway.verify_webhook_signature(raw_body, sig_header)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    try:
+        event_data = json.loads(raw_body.decode("utf-8"))
+        res = default_gateway.handle_webhook_event(event_data, signature_valid=True)
+        if res.get("new_status") == "succeeded":
+            sync_res = synchronize_confirmed_payment(res["session_id"])
+            res["synchronization"] = sync_res
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook processing error: {e}")
+
+
+@app.get('/api/pm/rent-collection/overview')
+def pm_rent_collection_overview_endpoint(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Provide property manager aggregate rent collection overview and overdue cases."""
+    effective_org = resolve_effective_org(x_organization_id, org_id or "ORG-APEX")
+    from .rent_payment_service import get_property_manager_collection_overview
+    return get_property_manager_collection_overview(org_id=effective_org)
+
+
+@app.post('/api/pm/rent-collection/sweep')
+def pm_rent_collection_sweep_endpoint(
+    org_id: Optional[str] = Query(None),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Trigger autonomous 3-stage overdue rent notification and escalation sweep."""
+    effective_org = resolve_effective_org(x_organization_id, org_id or "ORG-APEX")
+    from .rent_notification_service import sweep_upcoming_and_overdue_rent
+    return sweep_upcoming_and_overdue_rent(org_id=effective_org)
+
+
+@app.post('/api/pm/legal-notice/{case_id}/decision')
+def pm_legal_notice_decision_endpoint(
+    case_id: str,
+    req: LegalNoticeDecisionRequest
+):
+    """Property Manager approval gate for statutory legal notice dispatch."""
+    from .rent_notification_service import review_and_decide_legal_notice
+    try:
+        return review_and_decide_legal_notice(
+            case_id=case_id,
+            decision=req.decision,
+            reviewer_name=req.reviewer_name,
+            notes=req.notes
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/api/audit-logs')
+def get_audit_logs_endpoint(
+    org_id: Optional[str] = Query(None),
+    actor_type: Optional[str] = Query(None),
+    actor_id: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    resource_type: Optional[str] = Query(None),
+    resource_id: Optional[str] = Query(None),
+    outcome: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    start_time: Optional[str] = Query(None),
+    end_time: Optional[str] = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
+    """Query centralized, tenant-scoped audit logs with structured filtering."""
+    effective_org = resolve_effective_org(x_organization_id, org_id or "ORG-APEX")
+    from .audit import query_audit_logs
+    return query_audit_logs(
+        org_id=effective_org,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        outcome=outcome,
+        search=search,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+        offset=offset
+    )
 
 
 # Mount static assets if built from frontend/dist

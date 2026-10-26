@@ -130,7 +130,7 @@ export default function AdminDiagnosticsPortal() {
             </div>
             <h2 style={{ fontSize: 22, fontWeight: 700 }}>AI Provider Failover & Integration Telemetry</h2>
             <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>
-              Multi-tier AI failover (Meterless → NVIDIA NIM → Offline Deterministic) and Zetaris Cloud data federation.
+              Multi-tier AI failover (Meterless Runtime → Offline Deterministic) and Zetaris Cloud data federation.
             </div>
           </div>
 
@@ -179,7 +179,7 @@ export default function AdminDiagnosticsPortal() {
         </div>
       )}
 
-      {/* Integration Status Grid (3 Providers + Zetaris Data Federation) */}
+      {/* Integration Status Grid (Meterless + Offline + Zetaris Data Federation) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         {/* Meterless AI Card */}
         <div className="card" style={{ padding: 18 }}>
@@ -191,29 +191,14 @@ export default function AdminDiagnosticsPortal() {
             <div><strong>Endpoint:</strong> <code>{meterlessStatus?.details || 'http://host.docker.internal:8088/v1'}</code></div>
             <div><strong>Configured:</strong> {meterlessStatus?.configured ? 'Yes' : 'No (METERLESS_TOKEN missing)'}</div>
             <div><strong>Auth Status:</strong> <code>{meterlessStatus?.auth_status || 'unverified'}</code></div>
-            <div><strong>Role:</strong> Primary inference provider (Nightshift Nemotron lane)</div>
-          </div>
-        </div>
-
-        {/* NVIDIA NIM Card */}
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700 }}>2. NVIDIA NIM Hosted API</h3>
-            {getStatusPill(nimStatus?.status)}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-            <div><strong>Endpoint:</strong> <code>https://integrate.api.nvidia.com/v1</code></div>
-            <div><strong>Configured:</strong> {nimStatus?.configured ? 'Yes' : 'No (NVIDIA_NIM_API_KEY missing)'}</div>
-            <div><strong>Auth Status:</strong> <code>{nimStatus?.auth_status || 'unverified'}</code></div>
-            <div><strong>Model Verified:</strong> <code>{nimStatus?.model_verified || 'unverified'}</code></div>
-            <div><strong>Role:</strong> Automatic secondary failover provider</div>
+            <div><strong>Role:</strong> Primary inference & RAG provider (Nightshift lane)</div>
           </div>
         </div>
 
         {/* Offline Deterministic Card */}
         <div className="card" style={{ padding: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700 }}>3. Offline Deterministic</h3>
+            <h3 style={{ fontSize: 15, fontWeight: 700 }}>2. Offline Deterministic</h3>
             <span className="pill emerald">Live & Healthy</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>

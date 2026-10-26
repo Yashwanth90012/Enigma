@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function TenantARModule({
   summary,
@@ -19,6 +19,71 @@ export default function TenantARModule({
   const [activeTab, setActiveTab] = useState('lease');
   const [managerNote, setManagerNote] = useState('');
   const [decisionFeedback, setDecisionFeedback] = useState('');
+
+  // Phase 7: Authoritative Rent Collection & Escalation State
+  const [rentCollectionOverview, setRentCollectionOverview] = useState(null);
+  const [isSweepingRent, setIsSweepingRent] = useState(false);
+  const [sweepFeedback, setSweepFeedback] = useState(null);
+  const [legalCaseActionFeedback, setLegalCaseActionFeedback] = useState(null);
+
+  const loadRentCollectionOverview = async () => {
+    try {
+      const res = await fetch('/api/pm/rent-collection/overview', {
+        headers: { 'X-Organization-Id': currentOrgId }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRentCollectionOverview(data);
+      }
+    } catch (err) {
+      console.error('Failed to load rent collection overview', err);
+    }
+  };
+
+  useEffect(() => {
+    loadRentCollectionOverview();
+  }, [currentOrgId]);
+
+  const handleTriggerSweep = async () => {
+    setIsSweepingRent(true);
+    setSweepFeedback(null);
+    try {
+      const res = await fetch('/api/pm/rent-collection/sweep', {
+        method: 'POST',
+        headers: { 'X-Organization-Id': currentOrgId }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Sweep failed');
+      setSweepFeedback(`Sweep complete: ${data.evaluated_records_count} evaluated, ${data.upcoming_reminders_sent} upcoming, ${data.overdue_reminders_sent} overdue notices, ${data.legal_notices_queued} legal escalations.`);
+      loadRentCollectionOverview();
+    } catch (err) {
+      setSweepFeedback(`Error: ${err.message}`);
+    } finally {
+      setIsSweepingRent(false);
+    }
+  };
+
+  const handleLegalNoticeDecision = async (caseId, decision, reviewNotes) => {
+    try {
+      const res = await fetch(`/api/pm/legal-notice/${caseId}/decision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Organization-Id': currentOrgId
+        },
+        body: JSON.stringify({
+          decision,
+          review_notes: reviewNotes || `Property Manager review decision: ${decision}`
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Decision failed');
+      setLegalCaseActionFeedback(`Case ${caseId}: ${data.message}`);
+      loadRentCollectionOverview();
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
 
   // Multi-Agent Orchestrator Workflows
   const [isCrossValidating, setIsCrossValidating] = useState(false);
@@ -535,6 +600,9 @@ export default function TenantARModule({
               <button className={`tab-btn ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
                 <span>Audit JSONL</span>
               </button>
+              <button className={`tab-btn ${activeTab === 'rent_collection' ? 'active' : ''}`} onClick={() => setActiveTab('rent_collection')}>
+                <span>💳 Rent Collection ({rentCollectionOverview?.totals?.overdue_count || 0} Overdue)</span>
+              </button>
             </div>
 
             <div className="tab-content">
@@ -758,6 +826,245 @@ export default function TenantARModule({
                   <pre className="code-view">
                     {events.map((e) => JSON.stringify(e)).join('\n') || '{"status": "Audit stream active", "engine": "Meterless World Model"}'}
                   </pre>
+                </div>
+              )}
+
+              {activeTab === 'rent_collection' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div>
+                      <strong style={{ fontSize: 16, color: 'var(--text-heading)' }}>
+                        Monthly Rent Collection & Overdue Escalation Management
+                      </strong>
+                      <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
+                        Autonomous 3-stage billing lifecycle, verified payment synchronization, and statutory legal review.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleTriggerSweep}
+                      disabled={isSweepingRent}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <span>{isSweepingRent ? 'Running Scheduled Sweep...' : '⚡ Trigger Autonomous Overdue Sweep'}</span>
+                    </button>
+                  </div>
+
+                  {sweepFeedback && (
+                    <div style={{ padding: 12, borderRadius: 6, background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--primary)', marginBottom: 16, fontSize: 13, color: 'var(--primary)', fontWeight: 600 }}>
+                      ✓ {sweepFeedback}
+                    </div>
+                  )}
+
+                  {legalCaseActionFeedback && (
+                    <div style={{ padding: 12, borderRadius: 6, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--emerald)', marginBottom: 16, fontSize: 13, color: 'var(--emerald)', fontWeight: 600 }}>
+                      ✓ {legalCaseActionFeedback}
+                    </div>
+                  )}
+
+                  {/* KPI Summary Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+                    <div className="card" style={{ padding: 14, background: 'var(--surface-hover)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Total Billed</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fmtMoney(rentCollectionOverview?.totals?.total_billed_usd)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Active month obligations</div>
+                    </div>
+                    <div className="card" style={{ padding: 14, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--emerald)', textTransform: 'uppercase', fontWeight: 600 }}>Collected & Reconciled</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--emerald)', marginTop: 4 }}>{fmtMoney(rentCollectionOverview?.totals?.total_collected_usd)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--emerald)', marginTop: 2 }}>{rentCollectionOverview?.totals?.paid_count || 0} Tenancies Settled</div>
+                    </div>
+                    <div className="card" style={{ padding: 14, background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--primary)', textTransform: 'uppercase', fontWeight: 600 }}>Payment Due</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--primary)', marginTop: 4 }}>{fmtMoney(rentCollectionOverview?.totals?.due_sum)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--primary)', marginTop: 2 }}>{rentCollectionOverview?.totals?.due_count || 0} Due Within Window</div>
+                    </div>
+                    <div className="card" style={{ padding: 14, background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--rose)', textTransform: 'uppercase', fontWeight: 600 }}>Overdue & Escalated</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--rose)', marginTop: 4 }}>{fmtMoney(rentCollectionOverview?.totals?.overdue_sum)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--rose)', marginTop: 2 }}>{rentCollectionOverview?.totals?.overdue_count || 0} Past Grace Period</div>
+                    </div>
+                    <div className="card" style={{ padding: 14, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', textTransform: 'uppercase', fontWeight: 600 }}>Gateway Processing</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber)', marginTop: 4 }}>{fmtMoney(rentCollectionOverview?.totals?.processing_sum)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2 }}>{rentCollectionOverview?.totals?.processing_count || 0} In Flight</div>
+                    </div>
+                  </div>
+
+                  {/* Section 1: Statutory Legal Notice Review Queue */}
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        ⚖️ Statutory Legal Notice Review Queue
+                        <span className="pill rose" style={{ fontSize: 11 }}>Guarded Escalation Gate</span>
+                      </h4>
+                      <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                        Mandatory Property Manager verification before formal statutory legal service
+                      </span>
+                    </div>
+
+                    {(!rentCollectionOverview?.legal_cases || rentCollectionOverview.legal_cases.length === 0) ? (
+                      <div style={{ padding: 14, borderRadius: 6, background: 'var(--surface-hover)', fontSize: 12, color: 'var(--text-dim)' }}>
+                        ✓ No pending legal notice review cases. All overdue tenancies are within standard grace or payment arrangements.
+                      </div>
+                    ) : (
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Case ID</th>
+                            <th>Tenant & Unit</th>
+                            <th>Stage</th>
+                            <th>Past Due Amount</th>
+                            <th>3-Day Deadline</th>
+                            <th>Status</th>
+                            <th>Statutory Reason</th>
+                            <th>Manager Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentCollectionOverview.legal_cases.map((lc) => (
+                            <tr key={lc.case_id}>
+                              <td><code style={{ fontSize: 11 }}>{lc.case_id}</code></td>
+                              <td>
+                                <strong>{lc.tenant_name || 'Resident'}</strong>
+                                <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{lc.unit || 'Unit'} · {lc.lease_id}</div>
+                              </td>
+                              <td><span className="pill amber">{lc.escalation_stage}</span></td>
+                              <td><strong style={{ color: 'var(--rose)' }}>{fmtMoney(lc.amount_past_due_usd)}</strong></td>
+                              <td>
+                                <strong style={{ color: 'var(--rose)' }}>{lc.deadline_date ? new Date(lc.deadline_date).toLocaleDateString() : 'Expired'}</strong>
+                                <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>23:59:59 UTC</div>
+                              </td>
+                              <td>
+                                <span className={`pill ${lc.status === 'pending_review' ? 'amber' : lc.status === 'dispatched' ? 'rose' : lc.status === 'cancelled_by_payment' ? 'emerald' : 'cyan'}`}>
+                                  {lc.status}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: 12, maxWidth: 200 }}>{lc.reason}</td>
+                              <td>
+                                {lc.status === 'pending_review' ? (
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-emerald"
+                                      onClick={() => handleLegalNoticeDecision(lc.case_id, 'approved', 'Authorized statutory 3-day notice after pre-flight status check.')}
+                                    >
+                                      Approve Notice
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-secondary"
+                                      onClick={() => handleLegalNoticeDecision(lc.case_id, 'rejected', 'Payment arrangement accepted by property manager.')}
+                                    >
+                                      Grant Exception
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>Review Completed</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Section 2: Active Monthly Rent Obligations */}
+                  <div style={{ marginBottom: 24 }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+                      📋 Tenant Monthly Rent Obligations & Real-Time Status
+                    </h4>
+                    {(!rentCollectionOverview?.records || rentCollectionOverview.records.length === 0) ? (
+                      <div style={{ padding: 14, borderRadius: 6, background: 'var(--surface-hover)', fontSize: 12, color: 'var(--text-dim)' }}>
+                        No billing records found.
+                      </div>
+                    ) : (
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Lease ID</th>
+                            <th>Tenant & Unit</th>
+                            <th>Billing Month</th>
+                            <th>Due Date</th>
+                            <th>Rent Obligation</th>
+                            <th>Balance Due</th>
+                            <th>Status</th>
+                            <th>Payment Reference</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentCollectionOverview.records.map((r) => (
+                            <tr key={r.id}>
+                              <td><strong>{r.lease_id}</strong></td>
+                              <td>
+                                <div>{r.tenant_name || 'Resident'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{r.unit}</div>
+                              </td>
+                              <td>{r.billing_period}</td>
+                              <td>{r.due_date}</td>
+                              <td>{fmtMoney(r.rent_amount_usd)}</td>
+                              <td>
+                                <strong style={{ color: Number(r.outstanding_amount_usd) > 0 ? 'var(--rose)' : 'var(--emerald)' }}>
+                                  {fmtMoney(r.outstanding_amount_usd)}
+                                </strong>
+                              </td>
+                              <td>
+                                <span className={`pill ${r.status === 'paid' ? 'emerald' : r.status === 'overdue' ? 'rose' : r.status === 'due' ? 'cyan' : 'amber'}`}>
+                                  {r.status}
+                                </span>
+                              </td>
+                              <td>
+                                <code style={{ fontSize: 11 }}>{r.payment_reference || '—'}</code>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Section 3: Authoritative Gateway Transactions */}
+                  <div>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+                      💳 Payment Gateway Settlement Log (HMAC-SHA256 Verified)
+                    </h4>
+                    {(!rentCollectionOverview?.recent_payments || rentCollectionOverview.recent_payments.length === 0) ? (
+                      <div style={{ padding: 14, borderRadius: 6, background: 'var(--surface-hover)', fontSize: 12, color: 'var(--text-dim)' }}>
+                        No gateway transactions recorded.
+                      </div>
+                    ) : (
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Transaction Ref</th>
+                            <th>Provider</th>
+                            <th>Method</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Timestamp (UTC)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentCollectionOverview.recent_payments.map((p) => (
+                            <tr key={p.id}>
+                              <td><code style={{ fontSize: 11 }}>{p.provider_transaction_id || p.idempotency_key}</code></td>
+                              <td><span className="pill">{p.provider || 'SANDBOX'}</span></td>
+                              <td>{p.payment_method || 'ACH'}</td>
+                              <td><strong>{fmtMoney(p.amount_usd)}</strong></td>
+                              <td>
+                                <span className={`pill ${p.status === 'succeeded' ? 'emerald' : p.status === 'failed' ? 'rose' : 'amber'}`}>
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: 11 }}>{p.created_at ? new Date(p.created_at).toLocaleString() : 'N/A'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

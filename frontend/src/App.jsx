@@ -15,6 +15,7 @@ const AdminDiagnosticsPortal = lazy(() => import('./components/AdminDiagnosticsP
 const ComplianceRiskHub = lazy(() => import('./components/ComplianceRiskHub'));
 const CommunicationTemplatesHub = lazy(() => import('./components/CommunicationTemplatesHub'));
 const DocumentIntelligenceHub = lazy(() => import('./components/DocumentIntelligenceHub'));
+const AuditLogsPortal = lazy(() => import('./components/AuditLogsPortal'));
 
 // Lazy-loaded modals
 const OnboardCustomerModal = lazy(() => import('./components/Modals/OnboardCustomerModal'));
@@ -569,6 +570,12 @@ export default function App() {
             {activeHub === 'admin' && (
               <div className="page-view-container">
                 <AdminDiagnosticsPortal />
+              </div>
+            )}
+
+            {activeHub === 'audit' && (
+              <div className="page-view-container">
+                <AuditLogsPortal currentOrgId={currentOrgId} />
               </div>
             )}
           </Suspense>

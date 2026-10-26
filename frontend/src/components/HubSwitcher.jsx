@@ -101,6 +101,16 @@ export default function HubSwitcher({
           <span>Admin & Schedulers</span>
           <span className="hub-pill rose">Diagnostics</span>
         </button>
+
+        <button
+          className={`hub-nav-btn ${activeHub === 'audit' ? 'active emerald-hub' : ''}`}
+          onClick={() => setActiveHub('audit')}
+          title="Centralized website audit logs, activity tracking, and security review"
+        >
+          <svg className="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span>Audit Logs</span>
+          <span className="hub-pill emerald">Security</span>
+        </button>
       </div>
 
       {/* Real-Time System Telemetry Rack */}

@@ -140,12 +140,17 @@ def run_compliance_and_risk_scan(org_id: Optional[str] = None) -> Dict[str, Any]
         # Fetch properties with org ownership
         if org_id:
             props = conn.execute(
-                """SELECT property_id, name, state, org_id FROM properties WHERE org_id = %s""",
+                """SELECT p.property_id, p.name, p.state, p.org_id 
+                   FROM properties p
+                   JOIN organizations o ON p.org_id = o.id
+                   WHERE p.org_id = %s""",
                 (org_id,)
             ).fetchall()
         else:
             props = conn.execute(
-                """SELECT property_id, name, state, org_id FROM properties"""
+                """SELECT p.property_id, p.name, p.state, p.org_id 
+                   FROM properties p
+                   JOIN organizations o ON p.org_id = o.id"""
             ).fetchall()
 
     prop_map = {p[0]: {"name": p[1], "state": p[2], "org_id": p[3]} for p in props}
@@ -538,6 +543,7 @@ def run_compliance_and_risk_scan(org_id: Optional[str] = None) -> Dict[str, Any]
                       wo.priority, wo.status, wo.reported_date, wo.technician, p.org_id
                FROM work_order_records wo
                JOIN properties p ON wo.property_id = p.property_id
+               JOIN organizations o ON p.org_id = o.id
                WHERE wo.status NOT IN ('Completed', 'Closed')"""
         ).fetchall()
 
@@ -686,7 +692,10 @@ def run_compliance_and_risk_scan(org_id: Optional[str] = None) -> Dict[str, Any]
     # -------------------------------------------------------------------------
     persisted_count = 0
     with db() as conn:
+        valid_orgs = {row[0] for row in conn.execute("SELECT id FROM organizations").fetchall()}
         for f in findings_to_insert:
+            if f.get("org_id") not in valid_orgs:
+                continue
             f_id = f"RISK-{hash(f['stable_key']) & 0x7FFFFFFF:08x}".upper()
             evidence_json = json.dumps(f.get("evidence", {}))
             

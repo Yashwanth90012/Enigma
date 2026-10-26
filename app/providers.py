@@ -73,23 +73,37 @@ class AIMalformedOutputError(AIProviderError):
 
 # --- Provider Implementations ---
 
+def normalize_meterless_base(url: str) -> str:
+    """Normalize Meterless base URL to <host>/v1 without producing /v1/v1."""
+    u = url.strip()
+    u = re.sub(r'/(v1|chat|completions|models|embeddings|healthz).*$', '', u)
+    u = u.rstrip('/')
+    if not u.endswith('/v1'):
+        u = f"{u}/v1"
+    return u
+
+
 class MeterlessProvider:
-    """Adapter for Meterless Nightshift / NVIDIA Nemotron lane."""
+    """Adapter for Meterless Runtime OpenAI-compatible endpoint."""
+    _last_failed_at: float = 0.0
+
     def __init__(self):
-        self.base = settings.meterless_base_url.rstrip('/')
-        self.token = settings.meterless_token
-        self.model = settings.meterless_model or 'meterless/auto'
-        self.timeout = getattr(settings, 'meterless_timeout_seconds', 30)
+        self.base = normalize_meterless_base(getattr(settings, 'meterless_base_url', 'http://host.docker.internal:8088/v1'))
+        self.token = getattr(settings, 'meterless_token', '')
+        self.model = getattr(settings, 'meterless_model', 'meterless/auto') or 'meterless/auto'
+        self.timeout = getattr(settings, 'meterless_timeout_seconds', 180)
 
     def is_configured(self) -> bool:
         return bool(self.token)
 
     def chat(self, system: str, user: str, timeout: Optional[int] = None) -> str:
-        if not self.is_configured():
-            raise AIAuthError("METERLESS_TOKEN is not configured; cannot call Meterless provider")
+        """Send chat completion to Meterless Runtime at /v1/chat/completions."""
+        now = time.time()
+        if now - MeterlessProvider._last_failed_at < 15.0:
+            raise AIConnectionError(f"Meterless Runtime circuit open (unreachable at {self.base})")
 
         headers = {
-            'Authorization': f'Bearer {self.token}',
+            'Authorization': f'Bearer {self.token}' if self.token else 'Bearer ',
             'meterless-app': 'equilibra',
             'meterless-scope': 'user',
             'Content-Type': 'application/json'
@@ -105,16 +119,16 @@ class MeterlessProvider:
 
         req_timeout = timeout or self.timeout
         try:
-            with httpx.Client(timeout=req_timeout) as client:
+            with httpx.Client(timeout=httpx.Timeout(read=req_timeout, connect=2.0, write=5.0, pool=2.0)) as client:
                 resp = client.post(
                     f"{self.base}/chat/completions",
                     headers=headers,
                     json=payload
                 )
                 if resp.status_code in (401, 403):
-                    raise AIAuthError(f"Meterless authentication failed with status {resp.status_code}")
+                    raise AIAuthError(f"Meterless Runtime at {self.base} returned unauthorized (status {resp.status_code}). Please configure METERLESS_TOKEN.")
                 if resp.status_code == 404:
-                    raise AIModelError(f"Meterless model or endpoint not found: {resp.status_code}")
+                    raise AIModelError(f"Meterless model or endpoint not found at {self.base}/chat/completions: {resp.status_code}")
                 if resp.status_code >= 500:
                     raise AIServerError(f"Meterless server error {resp.status_code}: {resp.text[:200]}")
                 resp.raise_for_status()
@@ -127,8 +141,10 @@ class MeterlessProvider:
                     raise AIMalformedOutputError("Meterless response returned empty message content")
                 return str(content)
         except (httpx.ConnectError, httpx.NetworkError) as e:
-            raise AIConnectionError(f"Cannot connect to Meterless at {self.base}: {str(e)}") from e
+            MeterlessProvider._last_failed_at = time.time()
+            raise AIConnectionError(f"Cannot connect to Meterless Runtime at {self.base}: {str(e)}") from e
         except httpx.TimeoutException as e:
+            MeterlessProvider._last_failed_at = time.time()
             raise AITimeoutError(f"Meterless request timed out after {req_timeout}s") from e
 
     def _deterministic_summary(self, user_content: str) -> str:
@@ -140,24 +156,19 @@ class MeterlessProvider:
         )
 
     def health_check(self) -> Dict[str, Any]:
-        """Perform real verification of Meterless service reachability and auth."""
-        configured = self.is_configured()
-        if not configured:
-            return {
-                "name": "Meterless / Nightshift",
-                "service": "Meterless AI / Nightshift",
-                "configured": False,
-                "reachable": False,
-                "auth_status": "unverified",
-                "model_verified": "unverified",
-                "status": "NOT_CONFIGURED",
-                "connection_status": "configured_offline",
-                "details": "METERLESS_TOKEN is not set"
-            }
+        """Perform live verification of Meterless Runtime reachability and auth."""
+        headers = {
+            'meterless-app': 'equilibra',
+            'Accept': 'application/json'
+        }
+        if self.token:
+            headers['Authorization'] = f'Bearer {self.token}'
+        else:
+            headers['Authorization'] = 'Bearer '
 
         try:
-            with httpx.Client(timeout=3) as client:
-                r = client.get(f"{self.base}/models", headers={'Authorization': f'Bearer {self.token}'})
+            with httpx.Client(timeout=5) as client:
+                r = client.get(f"{self.base}/models", headers=headers)
                 if r.status_code == 200:
                     return {
                         "name": "Meterless / Nightshift",
@@ -168,43 +179,43 @@ class MeterlessProvider:
                         "model_verified": "verified",
                         "status": "HEALTHY",
                         "connection_status": "connected",
-                        "details": f"Connected to {self.base}"
+                        "details": f"Connected to Meterless Runtime at {self.base}"
                     }
                 elif r.status_code in (401, 403):
                     return {
                         "name": "Meterless / Nightshift",
                         "service": "Meterless AI / Nightshift",
-                        "configured": True,
+                        "configured": bool(self.token),
                         "reachable": True,
-                        "auth_status": "invalid",
+                        "auth_status": "unauthorized",
                         "model_verified": "unverified",
                         "status": "AUTH_FAILED",
-                        "connection_status": "auth_failed",
-                        "details": f"HTTP {r.status_code} Unauthorized"
+                        "connection_status": "auth_required",
+                        "details": f"Meterless Runtime reached at {self.base}; METERLESS_TOKEN required."
                     }
                 else:
                     return {
                         "name": "Meterless / Nightshift",
                         "service": "Meterless AI / Nightshift",
-                        "configured": True,
+                        "configured": bool(self.token),
                         "reachable": True,
                         "auth_status": "unverified",
                         "model_verified": "unverified",
                         "status": "DEGRADED",
                         "connection_status": "degraded",
-                        "details": f"HTTP {r.status_code} from /models"
+                        "details": f"HTTP {r.status_code} from {self.base}/models"
                     }
         except Exception as e:
             return {
                 "name": "Meterless / Nightshift",
                 "service": "Meterless AI / Nightshift",
-                "configured": True,
+                "configured": bool(self.token),
                 "reachable": False,
                 "auth_status": "unverified",
                 "model_verified": "unverified",
                 "status": "UNREACHABLE",
                 "connection_status": "unreachable",
-                "details": f"Connection failed to {self.base}"
+                "details": f"Cannot connect to Meterless Runtime at {self.base}: {str(e)}"
             }
 
 
@@ -420,19 +431,22 @@ class UnifiedAIProvider:
         self.last_fallback_reason: Optional[str] = None
 
     def _get_provider_order(self) -> List[str]:
-        configured_mode = getattr(settings, 'ai_provider', 'auto').lower()
+        configured_mode = getattr(settings, 'ai_provider', 'meterless').lower()
         if configured_mode == 'meterless':
-            return ['meterless']
+            return ['meterless', 'offline']
         elif configured_mode == 'offline':
             return ['offline']
         elif configured_mode == 'nim':
-            return ['nim']
+            return ['nim', 'offline']
 
-        # 'auto' mode: parse fallback order
+        # 'auto' mode: parse fallback order ensuring meterless is strictly first
         raw_order = getattr(settings, 'ai_fallback_order', 'meterless,nim,offline')
         order = [x.strip().lower() for x in raw_order.split(',') if x.strip()]
         if not order:
             order = ['meterless', 'nim', 'offline']
+        if 'meterless' in order:
+            order.remove('meterless')
+            order.insert(0, 'meterless')
         return order
 
     def chat(self, system: str, user: str, side_effects_executed: bool = False) -> str:
@@ -477,8 +491,6 @@ class UnifiedAIProvider:
                 t0 = time.perf_counter()
                 try:
                     if provider_key == 'meterless':
-                        if not self.meterless.is_configured():
-                            raise AIAuthError("METERLESS_TOKEN missing")
                         content = self.meterless.chat(system, user)
                     elif provider_key == 'nim':
                         if not self.nim.is_configured():

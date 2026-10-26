@@ -1190,3 +1190,28 @@ def recover_interrupted_workflows() -> List[Dict[str, Any]]:
             recovered.append({"workflow_id": wf_id, "status": "failed", "error": str(e)})
 
     return recovered
+
+
+# =============================================================================
+# 9. Meterless Markovian Continuity & Side-Effect Deduplication Integration
+# =============================================================================
+
+def run_with_markovian_continuity(
+    workflow_id: str,
+    step_id: str,
+    action_type: str,
+    payload: Dict[str, Any],
+    executor_fn: Callable[[], Any],
+    org_id: str = "default"
+) -> Dict[str, Any]:
+    """Execute a workflow step side-effect with Markovian idempotency and checkpoint continuity."""
+    from .engines.markovian import get_markovian_engine
+    markovian = get_markovian_engine(org_id=org_id)
+    idempotency_key = f"{org_id}:{workflow_id}:{step_id}:{action_type}"
+    return markovian.execute_side_effect(
+        idempotency_key=idempotency_key,
+        action_type=action_type,
+        payload=payload,
+        executor_fn=executor_fn,
+        run_id=f"wf-{workflow_id}"
+    )

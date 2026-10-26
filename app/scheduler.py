@@ -73,6 +73,15 @@ async def run_autonomous_jobs() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Compliance & risk sweep error: {e}")
         results["errors"].append(f"Compliance sweep error: {str(e)}")
+
+    # 5. Autonomous 3-Stage Rent Collection & Overdue Notification sweep
+    try:
+        from .rent_notification_service import sweep_upcoming_and_overdue_rent
+        rent_sweep = sweep_upcoming_and_overdue_rent(org_id="ORG-APEX")
+        results["rent_sweep"] = rent_sweep
+    except Exception as e:
+        logger.error(f"Rent collection sweep error: {e}")
+        results["errors"].append(f"Rent sweep error: {str(e)}")
         
     _job_history.insert(0, results)
     if len(_job_history) > 20:
@@ -88,6 +97,8 @@ async def scheduler_loop(interval_seconds: int = 300):
     logger.info("EQUILIBRA Autonomous Background Scheduler initialized.")
     
     try:
+        # Allow the API and lifespan to finish startup before triggering first periodic sweep
+        await asyncio.sleep(interval_seconds)
         while _is_running:
             await run_autonomous_jobs()
             await asyncio.sleep(interval_seconds)

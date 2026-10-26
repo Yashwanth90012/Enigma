@@ -11,9 +11,35 @@ Complies with upstream Meterless World Model reference specification:
 
 import json
 import re
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from .database import db
+
+logger = logging.getLogger("equilibra.world_model")
+
+# Re-export official Meterless World Model specification & engine primitives
+from .engines.world_model import (
+    WorldModel,
+    get_world_model,
+    normalize_name,
+    entity_id_from_name,
+    external_id,
+    context_id_from_attrs,
+    relationship_id,
+    fact_id,
+    canonical_json,
+    levenshtein,
+    name_similarity,
+    decide,
+    jaccard,
+    WorldEntity,
+    WorldRelationship,
+    WorldFact,
+    WorldContext,
+    AuditEntry,
+    MergeProposal
+)
 
 def canonical_id(entity_type: str, raw_id: str) -> str:
     """Normalize raw identifiers into canonical stable entity IDs."""
@@ -43,7 +69,10 @@ def record_event(
     entity_id: str,
     event_type: str,
     payload: Dict[str, Any],
-    caused_by: Optional[List[int]] = None
+    caused_by: Optional[List[int]] = None,
+    actor: str = "system",
+    source: Optional[str] = None,
+    **kwargs
 ) -> int:
     """Record an append-only event into the World Model and update the derived projection."""
     c_id = canonical_id('case' if entity_id == case_id else 'entity', entity_id)
@@ -70,14 +99,73 @@ def record_event(
                    state = excluded.state, updated_at = now()""",
             (case_id, c_id, version, json.dumps(derived, default=str))
         )
-        return event_id
 
-def get_events(case_id: str) -> List[Dict[str, Any]]:
+    # Step 4: Non-blocking H-MEM Contextual Memory Integration
+    _publish_event_to_hmem_safely(case_id, entity_id, event_type, payload, event_id)
+    return event_id
+
+def _publish_event_to_hmem_safely(
+    case_id: str,
+    entity_id: str,
+    event_type: str,
+    payload: Dict[str, Any],
+    event_id: Optional[int]
+) -> None:
+    """Store concise contextual memory referencing the authoritative World Model event.
+    
+    Guarantees:
+    - Does not copy the entire event log into H-MEM.
+    - Decoupled: H-MEM errors never roll back or fail the committed World Model event.
+    - Stores source provenance (case_id, entity_id, event_type, event_id).
+    """
+    CONSEQUENTIAL_EVENTS = {
+        "lease_signed", "lease_renewal_approved", "move_out_approved",
+        "vendor_invoice_generated", "vendor_bill_reconciled", "vendor_payment_recorded",
+        "work_order_created", "emergency_maintenance_triaged", "approval_recorded",
+        "compliance_scan_completed", "investigation_completed"
+    }
+    if event_type not in CONSEQUENTIAL_EVENTS:
+        return
+
+    try:
+        from .engines.hmem import get_hmem_instance, Provenance
+        hmem = get_hmem_instance()
+        summary_items = []
+        for k in ("status", "reason_code", "total_usd", "amount_usd", "monthly_rent_usd", "decision", "reviewer"):
+            if k in payload:
+                summary_items.append(f"{k}={payload[k]}")
+        detail_str = f" ({', '.join(summary_items)})" if summary_items else ""
+        text = f"[WorldModel Event #{event_id}] {event_type} on {entity_id}{detail_str}."
+
+        prov = Provenance(
+            source_id=f"world_event:{event_id}",
+            document_id=f"case:{case_id}",
+            metadata={
+                "event_id": event_id,
+                "case_id": case_id,
+                "entity_id": entity_id,
+                "event_type": event_type
+            }
+        )
+        hmem.store.add(
+            tier="working",
+            text=text,
+            tags=["world_event", event_type, f"case:{case_id}"],
+            domain="property_management",
+            provenance=prov,
+            confidence=0.92
+        )
+    except Exception as exc:
+        logger.debug(f"Non-blocking H-MEM event hook notice: {exc}")
+
+
+def get_events(case_id: str, limit: Optional[int] = None, org_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Retrieve all chronological events for a case."""
     with db() as conn:
+        limit_sql = f" LIMIT {int(limit)}" if limit is not None else ""
         rows = conn.execute(
-            """SELECT id, entity_id, canonical_id, event_type, payload, version, caused_by, created_at
-               FROM world_events WHERE case_id = %s ORDER BY id ASC""",
+            f"""SELECT id, entity_id, canonical_id, event_type, payload, version, caused_by, created_at
+               FROM world_events WHERE case_id = %s ORDER BY id ASC{limit_sql}""",
             (case_id,)
         ).fetchall()
     return [
@@ -164,7 +252,7 @@ def replay_events_for_state(conn, case_id: str) -> Dict[str, Any]:
 
     return state
 
-def get_latest_state(case_id: str) -> Dict[str, Any]:
+def get_latest_state(case_id: str, org_id: Optional[str] = None) -> Dict[str, Any]:
     """Fetch the latest derived state projection (from cache or computed)."""
     with db() as conn:
         row = conn.execute(

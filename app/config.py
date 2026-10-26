@@ -6,14 +6,14 @@ class Settings(BaseSettings):
     data_dir: str = '/app/data'
     finance_source: str = 'fixture'
     # Provider selection and failover
-    ai_provider: str = 'auto'
+    ai_provider: str = 'meterless'
     ai_fallback_order: str = 'meterless,nim,offline'
 
     # Meterless/Nightshift
     meterless_base_url: str = 'http://host.docker.internal:8088/v1'
     meterless_token: str = ''
     meterless_model: str = 'meterless/auto'
-    meterless_timeout_seconds: int = 30
+    meterless_timeout_seconds: int = 180
 
     # NVIDIA NIM hosted API
     nvidia_nim_base_url: str = 'https://integrate.api.nvidia.com/v1'
@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     ocr_use_gpu: bool = False
 
     # Semantic RAG & Vector Embeddings Configuration
-    embedding_provider: str = 'auto' # auto, nvidia, offline
-    embedding_model: str = 'nvidia/nemotron-3.5-embed-1b'
+    embedding_provider: str = 'meterless' # meterless, auto, nvidia, offline
+    embedding_model: str = 'meterless/auto'
     embedding_base_url: str = 'https://integrate.api.nvidia.com/v1'
     embedding_dimension: int = 384
 

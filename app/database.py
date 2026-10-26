@@ -642,6 +642,347 @@ def init_database():
         conn.execute('CREATE INDEX IF NOT EXISTS os_wf_state ON orchestration_steps(workflow_id, state)')
         conn.execute('CREATE INDEX IF NOT EXISTS os_agent ON orchestration_steps(agent_id)')
 
+        # =====================================================================
+        # Meterless H-MEM Hierarchical Memory Tables
+        # =====================================================================
+        conn.execute('''CREATE TABLE IF NOT EXISTS hmem_memories (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'general',
+            layer TEXT NOT NULL DEFAULT 'working',
+            timestamp BIGINT NOT NULL,
+            last_accessed BIGINT NOT NULL,
+            access_count INT NOT NULL DEFAULT 0,
+            tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+            embedding JSONB NOT NULL DEFAULT '[]'::jsonb,
+            confidence NUMERIC(6,4) NOT NULL DEFAULT 0.7,
+            source TEXT NOT NULL,
+            provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+            chat_id TEXT,
+            mission_id TEXT,
+            goal_run_id TEXT,
+            property_id TEXT,
+            lease_id TEXT,
+            tenant_id TEXT,
+            domain TEXT NOT NULL DEFAULT 'general',
+            namespace TEXT NOT NULL DEFAULT 'general/notes',
+            entities JSONB NOT NULL DEFAULT '[]'::jsonb,
+            related_to JSONB NOT NULL DEFAULT '[]'::jsonb,
+            supersedes TEXT,
+            superseded_by TEXT,
+            derived_from JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_layer ON hmem_memories(layer)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_domain ON hmem_memories(domain)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_chat ON hmem_memories(chat_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_property ON hmem_memories(property_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_lease ON hmem_memories(lease_id)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS hmem_audit_ledger (
+            id BIGSERIAL PRIMARY KEY,
+            memory_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            timestamp BIGINT NOT NULL,
+            previous_state JSONB,
+            new_state JSONB,
+            details JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_ledger_mem ON hmem_audit_ledger(memory_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_ledger_action ON hmem_audit_ledger(action)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS hmem_dream_proposals (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            derived_from JSONB NOT NULL DEFAULT '[]'::jsonb,
+            suggested_domain TEXT,
+            status TEXT NOT NULL DEFAULT 'proposed',
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_proposals_status ON hmem_dream_proposals(status)')
+
+        # Phase 3: Meterless World Model Persistence Tables
+        conn.execute('''CREATE TABLE IF NOT EXISTS world_entities (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            entity_type TEXT NOT NULL,
+            name TEXT,
+            attrs JSONB NOT NULL DEFAULT '{}'::jsonb,
+            aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+            state TEXT NOT NULL DEFAULT 'active',
+            source JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_we_ns ON world_entities(namespace)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_we_type ON world_entities(entity_type)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_we_name ON world_entities(name)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS world_relationships (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            from_id TEXT NOT NULL,
+            rel_type TEXT NOT NULL,
+            to_id TEXT NOT NULL,
+            context TEXT,
+            attrs JSONB NOT NULL DEFAULT '{}'::jsonb,
+            valid_from TEXT NOT NULL,
+            valid_to TEXT,
+            superseded_by TEXT,
+            source JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wr_ns ON world_relationships(namespace)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wr_from ON world_relationships(from_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wr_to ON world_relationships(to_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wr_type ON world_relationships(rel_type)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wr_valid_to ON world_relationships(valid_to)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS world_facts (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            about TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            value JSONB NOT NULL,
+            confidence FLOAT DEFAULT 0.5,
+            context TEXT,
+            asserted_at TEXT NOT NULL,
+            superseded_by TEXT,
+            source JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wf_ns ON world_facts(namespace)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wf_about ON world_facts(about)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wf_pred ON world_facts(predicate)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS world_merge_proposals (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            left_id TEXT NOT NULL,
+            right_id TEXT NOT NULL,
+            left_name TEXT,
+            right_name TEXT,
+            similarity FLOAT NOT NULL,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            proposed_at TEXT NOT NULL,
+            resolved_at TEXT,
+            resolved_by TEXT,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wmp_ns ON world_merge_proposals(namespace)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wmp_status ON world_merge_proposals(status)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS world_audit_ledger (
+            seq BIGINT NOT NULL,
+            namespace TEXT NOT NULL DEFAULT 'default',
+            action TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            target_id TEXT,
+            run_id TEXT,
+            timestamp TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            PRIMARY KEY (seq, namespace)
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wal_ns ON world_audit_ledger(namespace)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wal_action ON world_audit_ledger(action)')
+
+        # =====================================================================
+        # Phase 4: Meterless Markovian Engine Tables
+        # =====================================================================
+        conn.execute('''CREATE TABLE IF NOT EXISTS markovian_runs (
+            run_id TEXT PRIMARY KEY,
+            org_id TEXT NOT NULL DEFAULT 'default',
+            workflow_id TEXT,
+            mode TEXT NOT NULL DEFAULT 'ARCHITECT',
+            prompt TEXT NOT NULL,
+            chunk_config JSONB NOT NULL,
+            status TEXT NOT NULL DEFAULT 'completed',
+            total_tokens_used INT DEFAULT 0,
+            total_tokens_saved INT DEFAULT 0,
+            efficiency_percent NUMERIC(6,2) DEFAULT 0.0,
+            duration_ms BIGINT DEFAULT 0,
+            token_label TEXT DEFAULT 'estimated',
+            output TEXT,
+            reflection TEXT,
+            error TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mr_org_status ON markovian_runs(org_id, status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mr_wf ON markovian_runs(workflow_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mr_created ON markovian_runs(created_at DESC)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS markovian_chunks (
+            id SERIAL PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES markovian_runs(run_id) ON DELETE CASCADE,
+            step INT NOT NULL,
+            tokens INT NOT NULL,
+            carryover TEXT,
+            content TEXT,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mc_run_step ON markovian_chunks(run_id, step)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS markovian_checkpoints (
+            checkpoint_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES markovian_runs(run_id) ON DELETE CASCADE,
+            step INT NOT NULL,
+            version INT NOT NULL DEFAULT 1,
+            chunk_config JSONB NOT NULL,
+            execution_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+            carryover TEXT NOT NULL,
+            input_refs JSONB NOT NULL DEFAULT '{}'::jsonb,
+            output_refs JSONB NOT NULL DEFAULT '{}'::jsonb,
+            pending_action JSONB NOT NULL DEFAULT '{}'::jsonb,
+            retry_count INT NOT NULL DEFAULT 0,
+            checksum TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mchk_run_step ON markovian_checkpoints(run_id, step DESC)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mchk_created ON markovian_checkpoints(created_at DESC)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS markovian_side_effects (
+            idempotency_key TEXT PRIMARY KEY,
+            org_id TEXT NOT NULL DEFAULT 'default',
+            run_id TEXT,
+            action_type TEXT NOT NULL,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'completed',
+            result JSONB NOT NULL DEFAULT '{}'::jsonb,
+            executed_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mse_org_action ON markovian_side_effects(org_id, action_type)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mse_run ON markovian_side_effects(run_id)')
+
+        # Phase 5: H-MEM Transactional Outbox for Reliable Contextual Memory Publication
+        conn.execute('''CREATE TABLE IF NOT EXISTS hmem_outbox (
+            outbox_id TEXT PRIMARY KEY,
+            org_id TEXT NOT NULL DEFAULT 'default',
+            event_id TEXT,
+            entity_id TEXT,
+            memory_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'pending',
+            retry_count INT NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            published_at TIMESTAMPTZ
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_outbox_org_status ON hmem_outbox(org_id, status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_hmem_outbox_event ON hmem_outbox(event_id)')
+
+        # =====================================================================
+        # Phase 7: Rent Payments, Gateway Sync, Audit Logs, and Legal Cases
+        # =====================================================================
+        conn.execute('''CREATE TABLE IF NOT EXISTS rent_billing_records (
+            id TEXT PRIMARY KEY,
+            lease_id TEXT NOT NULL REFERENCES lease_records(lease_id) ON DELETE CASCADE,
+            property_id TEXT REFERENCES properties(property_id) ON DELETE SET NULL,
+            unit TEXT,
+            tenant_name TEXT NOT NULL,
+            billing_period TEXT NOT NULL,
+            rent_amount_usd NUMERIC(12,2) NOT NULL,
+            late_fee_usd NUMERIC(12,2) DEFAULT 0.00,
+            total_due_usd NUMERIC(12,2) NOT NULL,
+            paid_amount_usd NUMERIC(12,2) DEFAULT 0.00,
+            outstanding_balance_usd NUMERIC(12,2) NOT NULL,
+            due_date TEXT NOT NULL,
+            grace_period_end_date TEXT NOT NULL,
+            three_day_deadline TEXT,
+            status TEXT NOT NULL DEFAULT 'upcoming',
+            payment_method TEXT,
+            payment_transaction_id TEXT,
+            payment_reference TEXT,
+            receipt_number TEXT,
+            paid_at TIMESTAMPTZ,
+            idempotency_key TEXT UNIQUE,
+            reminder_stage TEXT DEFAULT 'none',
+            legal_review_id TEXT,
+            metadata JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            UNIQUE (lease_id, billing_period)
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_rbr_lease ON rent_billing_records(lease_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_rbr_period ON rent_billing_records(billing_period)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_rbr_status ON rent_billing_records(status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_rbr_due_date ON rent_billing_records(due_date)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS payment_gateway_transactions (
+            id TEXT PRIMARY KEY,
+            lease_id TEXT NOT NULL REFERENCES lease_records(lease_id) ON DELETE CASCADE,
+            billing_record_id TEXT REFERENCES rent_billing_records(id) ON DELETE CASCADE,
+            org_id TEXT NOT NULL DEFAULT 'ORG-APEX',
+            amount_usd NUMERIC(12,2) NOT NULL,
+            currency TEXT DEFAULT 'USD',
+            provider TEXT NOT NULL DEFAULT 'sandbox',
+            status TEXT NOT NULL DEFAULT 'pending',
+            client_secret TEXT,
+            idempotency_key TEXT UNIQUE,
+            webhook_events JSONB DEFAULT '[]'::jsonb,
+            error_message TEXT,
+            receipt_url TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_pgt_lease ON payment_gateway_transactions(lease_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_pgt_bill ON payment_gateway_transactions(billing_record_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_pgt_status ON payment_gateway_transactions(status)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS audit_logs (
+            id TEXT PRIMARY KEY,
+            timestamp TIMESTAMPTZ DEFAULT now(),
+            org_id TEXT NOT NULL,
+            actor_type TEXT NOT NULL,
+            actor_id TEXT,
+            action TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            resource_id TEXT,
+            outcome TEXT NOT NULL,
+            correlation_id TEXT,
+            before_state JSONB,
+            after_state JSONB,
+            details JSONB DEFAULT '{}'::jsonb,
+            source_component TEXT NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_al_org_ts ON audit_logs(org_id, timestamp DESC)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_al_action ON audit_logs(action)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_al_resource ON audit_logs(resource_type, resource_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_al_actor ON audit_logs(actor_type, actor_id)')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS legal_notice_cases (
+            id TEXT PRIMARY KEY,
+            org_id TEXT NOT NULL,
+            lease_id TEXT NOT NULL REFERENCES lease_records(lease_id) ON DELETE CASCADE,
+            billing_record_id TEXT REFERENCES rent_billing_records(id) ON DELETE CASCADE,
+            tenant_name TEXT NOT NULL,
+            unit TEXT,
+            overdue_amount_usd NUMERIC(12,2) NOT NULL,
+            due_date TEXT NOT NULL,
+            three_day_deadline TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending_review',
+            eligibility_check JSONB NOT NULL DEFAULT '{}'::jsonb,
+            statutory_rule TEXT NOT NULL,
+            reviewed_by TEXT,
+            reviewed_at TIMESTAMPTZ,
+            review_notes TEXT,
+            dispatched_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_lnc_org_status ON legal_notice_cases(org_id, status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_lnc_lease ON legal_notice_cases(lease_id)')
+
+
 def simple_embedding(text: str):
     """Deterministic hashed lexical vector; OFFLINE DEMO ONLY, not a semantic model."""
     vec = [0.0] * 384

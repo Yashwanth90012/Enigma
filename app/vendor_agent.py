@@ -160,7 +160,11 @@ def get_vendor_invoice_bundle(invoice_id: str) -> Dict[str, Any]:
         }
     }
 
-def reconcile_vendor_bill(invoice_id: str) -> Dict[str, Any]:
+def reconcile_vendor_bill(
+    invoice_id: str,
+    retrieve_evidence: bool = True,
+    record_world_event: bool = True
+) -> Dict[str, Any]:
     """Execute end-to-end 4-way autonomous AP reconciliation on a vendor bill."""
     bundle = get_vendor_invoice_bundle(invoice_id)
     inv = bundle['invoice']
@@ -176,7 +180,7 @@ def reconcile_vendor_bill(invoice_id: str) -> Dict[str, Any]:
 
     # 1. RAG Retrieval of PDF clauses and line items
     evidence = []
-    if inv['lease_id']:
+    if retrieve_evidence and inv['lease_id']:
         try:
             evidence = retrieve(
                 f"{inv['invoice_number']} {inv['item_summary']} parts labor total warranty",
@@ -291,20 +295,21 @@ def reconcile_vendor_bill(invoice_id: str) -> Dict[str, Any]:
     )
 
     # 5. Record event in World Model
-    record_event(
-        case_id=inv['lease_id'] or inv['id'],
-        entity_id=inv['id'],
-        event_type='vendor_bill_reconciled',
-        payload={
-            'invoice_id': inv['id'],
-            'status': status,
-            'reason_code': reason_code,
-            'billed_usd': inv['total_usd'],
-            'paid_usd': pay['amount_usd'] if pay else 0.0,
-            'cleared_usd': bank['amount_usd'] if bank else 0.0,
-            'recommendation': action_required
-        }
-    )
+    if record_world_event:
+        record_event(
+            case_id=inv['lease_id'] or inv['id'],
+            entity_id=inv['id'],
+            event_type='vendor_bill_reconciled',
+            payload={
+                'invoice_id': inv['id'],
+                'status': status,
+                'reason_code': reason_code,
+                'billed_usd': inv['total_usd'],
+                'paid_usd': pay['amount_usd'] if pay else 0.0,
+                'cleared_usd': bank['amount_usd'] if bank else 0.0,
+                'recommendation': action_required
+            }
+        )
 
     return {
         'invoice_id': inv['id'],
@@ -401,29 +406,27 @@ def record_vendor_payment(
 def get_vendor_reconciliation_summary(org_id: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate high-level accounts payable and reconciliation metrics across all vendor invoices."""
     with db() as conn:
+        query = """
+            SELECT vi.id, 
+                   vi.total_usd, 
+                   vi.status, 
+                   COALESCE(vp.amount_usd, 0.0) as paid_amount,
+                   COALESCE(vp.payment_method, '') as payment_method,
+                   COALESCE(vb.amount_usd, 0.0) as cleared_amount,
+                   wo.estimated_cost_usd,
+                   (CASE WHEN vp.id IS NOT NULL THEN 1 ELSE 0 END) as has_payment,
+                   (CASE WHEN vb.id IS NOT NULL THEN 1 ELSE 0 END) as has_bank
+            FROM vendor_invoices vi
+            LEFT JOIN properties p ON vi.property_id = p.property_id
+            LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
+            LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id
+            LEFT JOIN work_order_records wo ON vi.work_order_id = wo.work_order_id
+        """
         if org_id and org_id != "all":
-            rows = conn.execute(
-                """SELECT vi.id, vi.total_usd, vi.status, 
-                          COALESCE(vp.amount_usd, 0.0) as paid_amount,
-                          COALESCE(vp.payment_method, '') as payment_method,
-                          COALESCE(vb.amount_usd, 0.0) as cleared_amount
-                   FROM vendor_invoices vi
-                   JOIN properties p ON vi.property_id = p.property_id
-                   LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
-                   LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id
-                   WHERE p.org_id = %s""",
-                (org_id,)
-            ).fetchall()
+            query += " WHERE p.org_id = %s"
+            rows = conn.execute(query, (org_id,)).fetchall()
         else:
-            rows = conn.execute(
-                """SELECT vi.id, vi.total_usd, vi.status, 
-                          COALESCE(vp.amount_usd, 0.0) as paid_amount,
-                          COALESCE(vp.payment_method, '') as payment_method,
-                          COALESCE(vb.amount_usd, 0.0) as cleared_amount
-                   FROM vendor_invoices vi
-                   LEFT JOIN vendor_payments vp ON vi.id = vp.invoice_id
-                   LEFT JOIN vendor_bank_transactions vb ON vi.id = vb.invoice_id"""
-            ).fetchall()
+            rows = conn.execute(query).fetchall()
 
     total_invoices = len(rows)
     total_billed = sum(float(r[1]) for r in rows)
@@ -437,19 +440,53 @@ def get_vendor_reconciliation_summary(org_id: Optional[str] = None) -> Dict[str,
 
     for r in rows:
         inv_id = r[0]
-        try:
-            recon = reconcile_vendor_bill(inv_id)
-            rc = recon.get('reason_code')
-            if rc == 'OVERBILLING_FLAGGED':
-                flagged_overbilling += 1
-            elif rc == 'UNCASHED_CHECK':
-                flagged_uncashed += 1
-            elif rc == 'SURCHARGE_VARIANCE':
-                flagged_surcharges += 1
-            elif rc == 'MATCH_CONFIRMED':
-                matched_count += 1
-        except Exception:
-            pass
+        total_usd = float(r[1]) if r[1] is not None else 0.0
+        paid_amount = float(r[3]) if r[3] is not None else 0.0
+        payment_method = r[4] or ''
+        cleared_amount = float(r[5]) if r[5] is not None else 0.0
+        estimated_cost_usd = float(r[6]) if r[6] is not None else None
+        has_payment = bool(r[7])
+        has_bank = bool(r[8])
+
+        billed_cents = cents(total_usd)
+        paid_cents = cents(paid_amount) if has_payment else 0
+        cleared_cents = cents(cleared_amount) if has_bank else 0
+        quote_cents = cents(estimated_cost_usd) if estimated_cost_usd is not None else billed_cents
+        method = payment_method
+
+        reason_code = 'MATCH_CONFIRMED'
+        if not has_payment:
+            reason_code = 'UNPAID_PENDING_APPROVAL'
+        else:
+            if not has_bank:
+                if method in ('check', 'cashiers_check'):
+                    reason_code = 'UNCASHED_CHECK'
+                else:
+                    reason_code = 'UNCONFIRMED_CLEARING'
+            else:
+                if abs(paid_cents - billed_cents) > 5:
+                    reason_code = 'PAYMENT_AMOUNT_MISMATCH'
+                elif cleared_cents != paid_cents and abs(cleared_cents - paid_cents) > 5:
+                    if method == 'credit_card' and cleared_cents > paid_cents:
+                        reason_code = 'SURCHARGE_VARIANCE'
+                    else:
+                        reason_code = 'BANK_CLEARING_VARIANCE'
+
+        quote_diff_cents = billed_cents - quote_cents
+        if quote_diff_cents > 0:
+            pct_increase = (quote_diff_cents / (quote_cents or 1)) * 100
+            if pct_increase > 25.0:
+                if reason_code == 'MATCH_CONFIRMED':
+                    reason_code = 'OVERBILLING_FLAGGED'
+
+        if reason_code == 'OVERBILLING_FLAGGED':
+            flagged_overbilling += 1
+        elif reason_code == 'UNCASHED_CHECK':
+            flagged_uncashed += 1
+        elif reason_code == 'SURCHARGE_VARIANCE':
+            flagged_surcharges += 1
+        elif reason_code == 'MATCH_CONFIRMED':
+            matched_count += 1
 
     return {
         'total_invoices': total_invoices,

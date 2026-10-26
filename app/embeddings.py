@@ -10,6 +10,7 @@ Provides:
 import hashlib
 import re
 import threading
+import time
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
@@ -195,27 +196,198 @@ class NvidiaNimEmbeddingProvider(BaseEmbeddingProvider):
             }
 
 
+def normalize_meterless_url(raw_url: str) -> str:
+    """Normalize pasted Meterless URL to <host>/v1 without producing /v1/v1."""
+    u = raw_url.strip()
+    u = re.sub(r'/(v1|chat|completions|models|embeddings|healthz).*$', '', u)
+    u = u.rstrip('/')
+    if not u.endswith('/v1'):
+        u = f"{u}/v1"
+    return u
+
+
+class MeterlessEmbeddingProvider(BaseEmbeddingProvider):
+    """Semantic vector embeddings via Meterless Runtime OpenAI-compatible /v1/embeddings endpoint."""
+
+    _shared_client: Optional[httpx.Client] = None
+    _vector_cache: Dict[str, List[float]] = {}
+    _cache_lock = threading.Lock()
+    _last_failed_at: float = 0.0
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+        model: Optional[str] = None,
+        dimension: Optional[int] = None,
+        timeout: float = 180.0
+    ):
+        raw_base = base_url or getattr(settings, "meterless_base_url", "http://host.docker.internal:8088/v1")
+        self.base_url = normalize_meterless_url(raw_base)
+        self.token = token if token is not None else getattr(settings, "meterless_token", "")
+        model_name = model or getattr(settings, "meterless_model", "meterless/auto")
+        dim = dimension or getattr(settings, "embedding_dimension", 384)
+        super().__init__(model=model_name, dimension=dim, is_semantic=True)
+        self.timeout = timeout
+
+    @classmethod
+    def get_client(cls, timeout: float = 180.0) -> httpx.Client:
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            with cls._cache_lock:
+                if cls._shared_client is None or cls._shared_client.is_closed:
+                    cls._shared_client = httpx.Client(
+                        limits=httpx.Limits(max_connections=15, max_keepalive_connections=10, keepalive_expiry=60.0),
+                        timeout=httpx.Timeout(connect=2.0, read=timeout, write=5.0, pool=2.0)
+                    )
+        return cls._shared_client
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {
+            "meterless-app": "equilibra",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        else:
+            headers["Authorization"] = "Bearer "
+        return headers
+
+    def embed_text(self, text: str, input_type: str = "query") -> List[float]:
+        cache_key = f"meterless:{self.model}:{self.dimension}:{input_type}:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+        with self._cache_lock:
+            if cache_key in self._vector_cache:
+                return self._vector_cache[cache_key]
+
+        vectors = self.embed_batch([text], input_type=input_type)
+        if not vectors:
+            raise RuntimeError("Meterless embeddings returned empty response for query")
+
+        with self._cache_lock:
+            if len(self._vector_cache) < 2000:
+                self._vector_cache[cache_key] = vectors[0]
+        return vectors[0]
+
+    def embed_batch(self, texts: List[str], input_type: str = "passage") -> List[List[float]]:
+        now = time.time()
+        if now - MeterlessEmbeddingProvider._last_failed_at < 15.0:
+            raise RuntimeError(f"Meterless Runtime circuit open (unreachable at {self.base_url})")
+
+        url = f"{self.base_url}/embeddings"
+        payload = {
+            "input": texts,
+            "model": self.model,
+            "dimensions": self.dimension
+        }
+
+        try:
+            client = self.get_client(timeout=self.timeout)
+            resp = client.post(url, headers=self._headers(), json=payload)
+        except Exception:
+            MeterlessEmbeddingProvider._last_failed_at = time.time()
+            raise
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"Meterless Embedding failed [HTTP {resp.status_code}]: {resp.text[:200]}")
+
+        data = resp.json()
+        results = []
+        for item in data.get("data", []):
+            vec = np.array(item["embedding"], dtype=np.float32)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            vec_list = [round(float(x), 6) for x in vec[:self.dimension]]
+            if len(vec_list) < self.dimension:
+                vec_list.extend([0.0] * (self.dimension - len(vec_list)))
+            results.append(vec_list)
+
+        return results
+
+    def health_check(self) -> Dict[str, Any]:
+        try:
+            client = self.get_client(timeout=5.0)
+            resp = client.get(f"{self.base_url}/models", headers=self._headers())
+            if resp.status_code == 200:
+                return {
+                    "status": "healthy",
+                    "provider": "meterless",
+                    "model": self.model,
+                    "endpoint": f"{self.base_url}/embeddings",
+                    "dimension": self.dimension,
+                    "is_semantic": True,
+                    "message": f"Connected to Meterless Runtime at {self.base_url}"
+                }
+            elif resp.status_code in (401, 403):
+                return {
+                    "status": "unauthorized",
+                    "provider": "meterless",
+                    "model": self.model,
+                    "endpoint": f"{self.base_url}/embeddings",
+                    "dimension": self.dimension,
+                    "is_semantic": True,
+                    "message": f"Meterless Runtime reached at {self.base_url}; token verification pending."
+                }
+            else:
+                return {
+                    "status": "degraded",
+                    "provider": "meterless",
+                    "model": self.model,
+                    "endpoint": f"{self.base_url}/embeddings",
+                    "dimension": self.dimension,
+                    "is_semantic": True,
+                    "message": f"Meterless HTTP {resp.status_code}: {resp.text[:100]}"
+                }
+        except Exception as e:
+            return {
+                "status": "unreachable",
+                "provider": "meterless",
+                "model": self.model,
+                "endpoint": f"{self.base_url}/embeddings",
+                "dimension": self.dimension,
+                "is_semantic": True,
+                "message": f"Cannot connect to Meterless Runtime at {self.base_url}: {str(e)}"
+            }
+
+
 class UnifiedEmbeddingProvider:
-    """Multi-tier Embedding Provider ensuring failover resilience and semantic metadata tracking."""
+    """Multi-tier Embedding Provider ensuring all RAG embeddings route through Meterless first."""
 
     def __init__(self):
+        self.meterless_provider = MeterlessEmbeddingProvider()
+        self.nim_provider = NvidiaNimEmbeddingProvider()
         self.offline_provider = OfflineDeterministicEmbeddingProvider(
             dimension=getattr(settings, "embedding_dimension", 384)
         )
-        self.nim_provider = NvidiaNimEmbeddingProvider()
 
     def get_active_provider_name(self) -> str:
-        prov = getattr(settings, "embedding_provider", "auto").lower()
+        prov = getattr(settings, "embedding_provider", "meterless").lower()
         if prov == "offline":
             return "offline"
-        if prov in ("auto", "nvidia") and self.nim_provider.is_configured():
+        if prov == "nvidia" and self.nim_provider.is_configured():
             return "nvidia"
-        return "offline"
+        return "meterless"
 
     def embed_text(self, text: str, input_type: str = "query") -> Tuple[List[float], Dict[str, Any]]:
-        """Embed text with automatic failover and metadata tracking."""
+        """Embed text with Meterless as primary tier."""
         active = self.get_active_provider_name()
-        if active == "nvidia":
+        
+        # Primary: Meterless Runtime
+        if active == "meterless":
+            try:
+                vec = self.meterless_provider.embed_text(text, input_type=input_type)
+                return vec, {
+                    "provider": "meterless",
+                    "model": self.meterless_provider.model,
+                    "dimension": len(vec),
+                    "is_semantic": True,
+                    "fallback_used": False
+                }
+            except Exception as e:
+                logger.warning(f"Meterless embedding call failed ({e}), falling back to secondary tier")
+
+        # Secondary: NVIDIA NIM only if explicitly configured as primary or active
+        if active == "nvidia" and self.nim_provider.is_configured():
             try:
                 vec = self.nim_provider.embed_text(text, input_type=input_type)
                 return vec, {
@@ -223,12 +395,12 @@ class UnifiedEmbeddingProvider:
                     "model": self.nim_provider.model,
                     "dimension": len(vec),
                     "is_semantic": True,
-                    "fallback_used": False
+                    "fallback_used": True
                 }
             except Exception as e:
-                logger.warning(f"Semantic embedding failed, falling back to deterministic: {e}")
+                logger.warning(f"NVIDIA NIM embedding fallback failed: {e}")
 
-        # Fallback to offline
+        # Final safety net: Offline deterministic
         vec = self.offline_provider.embed_text(text, input_type=input_type)
         return vec, {
             "provider": "offline",
@@ -239,9 +411,25 @@ class UnifiedEmbeddingProvider:
         }
 
     def embed_batch(self, texts: List[str], input_type: str = "passage") -> Tuple[List[List[float]], Dict[str, Any]]:
-        """Embed a batch of texts with automatic failover."""
+        """Embed batch of texts with Meterless as primary tier."""
         active = self.get_active_provider_name()
-        if active == "nvidia":
+
+        # Primary: Meterless Runtime
+        if active == "meterless":
+            try:
+                vecs = self.meterless_provider.embed_batch(texts, input_type=input_type)
+                return vecs, {
+                    "provider": "meterless",
+                    "model": self.meterless_provider.model,
+                    "dimension": self.meterless_provider.dimension,
+                    "is_semantic": True,
+                    "fallback_used": False
+                }
+            except Exception as e:
+                logger.warning(f"Meterless batch embedding failed ({e}), falling back to secondary tier")
+
+        # Secondary: NVIDIA NIM only if explicitly configured as primary or active
+        if active == "nvidia" and self.nim_provider.is_configured():
             try:
                 vecs = self.nim_provider.embed_batch(texts, input_type=input_type)
                 return vecs, {
@@ -249,11 +437,12 @@ class UnifiedEmbeddingProvider:
                     "model": self.nim_provider.model,
                     "dimension": self.nim_provider.dimension,
                     "is_semantic": True,
-                    "fallback_used": False
+                    "fallback_used": True
                 }
             except Exception as e:
-                logger.warning(f"Batch semantic embedding failed, falling back to deterministic: {e}")
+                logger.warning(f"NVIDIA NIM batch embedding fallback failed: {e}")
 
+        # Final safety net: Offline deterministic
         vecs = self.offline_provider.embed_batch(texts, input_type=input_type)
         return vecs, {
             "provider": "offline",
@@ -266,12 +455,14 @@ class UnifiedEmbeddingProvider:
     def health_check(self) -> Dict[str, Any]:
         """Return comprehensive health diagnostics across embedding tiers."""
         active = self.get_active_provider_name()
+        meterless_health = self.meterless_provider.health_check()
         nim_health = self.nim_provider.health_check()
         return {
-            "configured_mode": getattr(settings, "embedding_provider", "auto"),
+            "configured_mode": getattr(settings, "embedding_provider", "meterless"),
             "active_provider": active,
-            "is_semantic": (active == "nvidia" and nim_health.get("status") == "healthy"),
+            "is_semantic": True,
             "expected_dimension": getattr(settings, "embedding_dimension", 384),
+            "meterless_tier": meterless_health,
             "nvidia_tier": nim_health,
             "offline_tier": self.offline_provider.health_check()
         }

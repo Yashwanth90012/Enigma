@@ -46,6 +46,10 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
   const [payMethod, setPayMethod] = useState('ach_transfer');
   const [isPaying, setIsPaying] = useState(false);
   const [payFeedback, setPayFeedback] = useState(null);
+  const [rentDashboard, setRentDashboard] = useState(null);
+  const [activeReceipt, setActiveReceipt] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
 
   // Document upload form
   const [docTitle, setDocTitle] = useState('');
@@ -77,8 +81,13 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
   // Notifications
   const [notifications, setNotifications] = useState([]);
 
-  const fmtMoney = (n) =>
-    '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtMoney = (n) => {
+    const num = Number(n || 0);
+    if (num < 0) {
+      return '-$' + Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
 
   const getHeaders = () => ({
     'Content-Type': 'application/json',
@@ -137,6 +146,22 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
     }
   };
 
+  const loadRentDashboard = async (lid) => {
+    try {
+      const res = await fetch(`/api/tenant/rent-dashboard?lease_id=${lid}`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setRentDashboard(data);
+        if (data.current_bill) {
+          const bal = data.current_bill.outstanding_balance_usd;
+          setPayAmount(bal > 0 ? bal.toFixed(2) : data.current_bill.rent_amount_usd.toFixed(2));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load rent dashboard:', e);
+    }
+  };
+
   const loadNotifications = async () => {
     try {
       const res = await fetch('/api/notifications');
@@ -152,6 +177,7 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
   useEffect(() => {
     loadLeaseDetails(activeLeaseId);
     loadWorkflows(activeLeaseId);
+    loadRentDashboard(activeLeaseId);
     loadNotifications();
   }, [activeLeaseId, currentOrgId]);
 
@@ -188,33 +214,76 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
     }
   };
 
-  // Handle Pay Rent
+  // Handle Pay Rent via Phase 7 Authoritative Gateway & Synchronization
   const handlePayRent = async (e) => {
     e.preventDefault();
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) {
-      alert('Please enter a valid amount.');
+      alert('Please enter a valid amount greater than $0.00.');
       return;
     }
     setIsPaying(true);
     setPayFeedback(null);
 
     try {
-      const res = await fetch('/api/finance/pay', {
+      const billingRecordId = rentDashboard?.current_bill?.id || `BILL-${activeLeaseId.replace('LEASE-', '')}-2026-10`;
+      const idempotencyKey = `pay-tx-${activeLeaseId}-${Date.now()}`;
+      const customerEmail = leaseData?.lease?.resident_email || `${(leaseData?.lease?.tenant1 || 'tenant').toLowerCase().replace(' ', '.')}@enigma-tenant.internal`;
+
+      // 1. Initiate checkout session
+      const payRes = await fetch('/api/tenant/pay-rent', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
           lease_id: activeLeaseId,
+          billing_record_id: billingRecordId,
           amount_usd: amt,
+          customer_email: customerEmail,
           payment_method: payMethod,
-          reference: `RES-PAY-${Date.now().toString().slice(-6)}`,
-          simulate_bank_clearing: true
+          idempotency_key: idempotencyKey
         })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Payment failed');
-      setPayFeedback(data);
+      const payData = await payRes.json();
+      if (!payRes.ok) throw new Error(payData.detail || 'Payment initiation failed');
+
+      // 2. Simulate sandbox completion
+      const simRes = await fetch('/api/tenant/checkout-session/simulate', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          session_id: payData.session_id,
+          should_succeed: true
+        })
+      });
+      const simData = await simRes.json();
+      if (!simRes.ok) throw new Error(simData.detail || 'Payment simulation failed');
+
+      const sync = simData.synchronization;
+      const receiptNo = sync?.receipt_number || 'RCPT-CONFIRMED';
+      const reference = sync?.payment_reference || payData.session_id;
+
+      setPayFeedback({
+        message: `Payment of ${fmtMoney(amt)} confirmed and reconciled via ${payMethod.replace('_', ' ').toUpperCase()}`,
+        reference: reference,
+        receipt_number: receiptNo,
+        reconciliation_status: sync?.new_billing_status || 'paid'
+      });
+
+      setActiveReceipt({
+        receipt_number: receiptNo,
+        amount: amt,
+        reference: reference,
+        method: payMethod,
+        date: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+        tenant: leaseData?.lease?.tenant1 || 'Resident',
+        property: leaseData?.lease?.address || 'Community',
+        unit: leaseData?.lease?.unit || 'Unit',
+        billing_period: rentDashboard?.current_bill?.billing_period || 'Current Month'
+      });
+      setShowReceiptModal(true);
+
       loadLeaseDetails(activeLeaseId);
+      loadRentDashboard(activeLeaseId);
       loadNotifications();
     } catch (err) {
       alert(err.message);
@@ -501,6 +570,9 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
   const recon = leaseData?.reconciliation || {};
   const workOrders = leaseData?.work_orders || [];
   const varianceUsd = (recon.difference_cents || 0) / 100.0;
+  const currentOutstandingUsd = rentDashboard?.current_bill
+    ? Number(rentDashboard.current_bill.outstanding_balance_usd || 0)
+    : (varianceUsd > 0 ? varianceUsd : 0.0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -600,13 +672,13 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
         </div>
 
         <div className="kpi-card">
-          <div className={`kpi-accent-bar ${varianceUsd > 0 ? 'accent-rose' : 'accent-emerald'}`}></div>
+          <div className={`kpi-accent-bar ${currentOutstandingUsd > 0 ? 'accent-rose' : 'accent-emerald'}`}></div>
           <div className="kpi-label">Current Outstanding Balance</div>
-          <div className="kpi-value" style={{ color: varianceUsd > 0 ? 'var(--rose)' : 'var(--emerald)' }}>
-            {fmtMoney(varianceUsd)}
+          <div className="kpi-value" style={{ color: currentOutstandingUsd > 0 ? 'var(--rose)' : 'var(--emerald)' }}>
+            {fmtMoney(currentOutstandingUsd)}
           </div>
           <div className="kpi-sub">
-            {varianceUsd > 0 ? '⚠️ Unsettled balance due' : '✓ 100% Paid & Reconciled'}
+            {currentOutstandingUsd > 0 ? '⚠️ Unsettled balance due' : '✓ 100% Paid & Reconciled'}
           </div>
         </div>
 
@@ -626,76 +698,238 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
       </div>
 
       {/* TAB 1: OVERVIEW & RENT REMITTANCE */}
+      {/* TAB 1: OVERVIEW & RENT REMITTANCE */}
       {activeTab === 'overview' && (
         <>
+          {/* Overdue 3-Day Deadline Alert Banner */}
+          {(rentDashboard?.current_bill?.status === 'overdue' || rentDashboard?.current_bill?.status === 'action_required') && (
+            <div style={{
+              marginBottom: 20,
+              padding: 16,
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(245, 158, 11, 0.15))',
+              border: '2px solid var(--rose)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--rose)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  ⚠️ STATUTORY NOTICE OF OVERDUE RENT — 3-DAY PAYMENT DEADLINE
+                </span>
+                <span className="pill rose" style={{ fontWeight: 700, letterSpacing: 0.5 }}>
+                  ACTION REQUIRED
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>
+                Your rent payment for <strong>{rentDashboard.current_bill.billing_period}</strong> was due on <strong>{rentDashboard.current_bill.due_date}</strong>. The contractual grace period expired on <strong>{rentDashboard.current_bill.grace_period_end}</strong>.
+                To prevent statutory legal notice escalation, the outstanding balance of <strong>{fmtMoney(rentDashboard.current_bill.outstanding_amount_usd)}</strong> must be settled by:
+              </div>
+              <div style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: 'var(--rose)',
+                background: 'rgba(239, 68, 68, 0.1)',
+                padding: '8px 12px',
+                borderRadius: 6,
+                display: 'inline-block',
+                width: 'fit-content'
+              }}>
+                ⏰ Strict Payment Deadline: {rentDashboard.current_bill.three_day_deadline || 'Within 3 Calendar Days (23:59:59 UTC)'}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            {/* Left Column: Direct Rent Payment */}
+            {/* Left Column: Authoritative Monthly Rent Obligation & Settlement */}
             <div className="card" style={{ padding: 20 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>💳 Settle Monthly Rent Remittance</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>💳 Monthly Rent Obligation</h3>
+                <span className={`pill ${
+                  rentDashboard?.current_bill?.status === 'paid' ? 'emerald' :
+                  rentDashboard?.current_bill?.status === 'overdue' ? 'rose' :
+                  rentDashboard?.current_bill?.status === 'due' ? 'cyan' :
+                  rentDashboard?.current_bill?.status === 'processing' ? 'amber' : 'purple'
+                }`} style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: 11 }}>
+                  {rentDashboard?.current_bill?.status === 'paid' ? '✓ Paid & Reconciled' :
+                   rentDashboard?.current_bill?.status === 'overdue' ? 'Overdue' :
+                   rentDashboard?.current_bill?.status === 'due' ? 'Due' :
+                   rentDashboard?.current_bill?.status || 'Upcoming'}
+                </span>
+              </div>
+
+              {/* Obligation Details Summary */}
+              <div style={{ background: 'var(--surface-hover)', padding: 14, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-dim)' }}>Billing Period:</span>
+                  <strong>{rentDashboard?.current_bill?.billing_period || 'Current Billing Cycle'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-dim)' }}>Property & Unit:</span>
+                  <span>{leaseData?.lease?.address || 'Skyline Terrace'} · {leaseData?.lease?.unit || 'Unit'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-dim)' }}>Contractual Due Date:</span>
+                  <span>{rentDashboard?.current_bill?.due_date || '1st of month'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-dim)' }}>Grace Period End:</span>
+                  <span>{rentDashboard?.current_bill?.grace_period_end || '4th of month'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-dim)' }}>Base Rent:</span>
+                  <span>{fmtMoney(rentDashboard?.current_bill?.rent_amount_usd || lease.monthly_rent_usd)}</span>
+                </div>
+                {(rentDashboard?.current_bill?.late_fee_usd > 0) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: 'var(--rose)' }}>
+                    <span>Applicable Late Fee:</span>
+                    <span>+{fmtMoney(rentDashboard.current_bill.late_fee_usd)}</span>
+                  </div>
+                )}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 700 }}>
+                  <span>Outstanding Balance:</span>
+                  <span style={{ color: (rentDashboard?.current_bill?.outstanding_amount_usd || 0) > 0 ? 'var(--rose)' : 'var(--emerald)' }}>
+                    {fmtMoney(rentDashboard?.current_bill?.outstanding_amount_usd ?? 0)}
+                  </span>
+                </div>
+              </div>
+
               {payFeedback && (
                 <div style={{
                   padding: 12,
                   borderRadius: 6,
-                  background: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched')
+                  background: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'paid')
                     ? 'rgba(16, 185, 129, 0.1)'
                     : 'rgba(245, 158, 11, 0.1)',
-                  border: `1px solid ${(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched') ? 'var(--emerald)' : 'var(--amber)'}`,
+                  border: `1px solid ${(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'paid') ? 'var(--emerald)' : 'var(--amber)'}`,
                   marginBottom: 16
                 }}>
                   <div style={{
                     fontWeight: 600,
-                    color: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched') ? 'var(--emerald)' : 'var(--amber)'
+                    color: (payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'paid') ? 'var(--emerald)' : 'var(--amber)'
                   }}>
-                    {(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'matched')
+                    {(payFeedback.reconciliation_status === 'settled' || payFeedback.reconciliation_status === 'reconciled' || payFeedback.reconciliation_status === 'paid')
                       ? `✓ Verified Settlement: ${payFeedback.message}`
-                      : `⏳ Payment Submitted (Pending Settlement Verification): ${payFeedback.message}`}
+                      : `⏳ Payment Submitted: ${payFeedback.message}`}
                   </div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>
-                    Reference: <code>{payFeedback.reference}</code> · Ledger Settlement Status: <strong>{payFeedback.reconciliation_status}</strong>
+                  <div style={{ fontSize: 12, marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Ref: <code>{payFeedback.reference}</code></span>
+                    {payFeedback.receipt_number && (
+                      <button
+                        onClick={() => setShowReceiptModal(true)}
+                        className="btn btn-sm btn-secondary"
+                        style={{ padding: '2px 8px', fontSize: 11 }}
+                      >
+                        View Receipt
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
 
-              <form onSubmit={handlePayRent} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    Payment Amount (USD)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="input-field"
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    required
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border)' }}
-                  />
+              {/* State 1: Paid In Full */}
+              {rentDashboard?.current_bill?.status === 'paid' ? (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid var(--emerald)',
+                  borderRadius: 8,
+                  padding: 16,
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: 18, color: 'var(--emerald)', fontWeight: 700, marginBottom: 6 }}>
+                    ✓ Rent Paid In Full
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 14 }}>
+                    The rent obligation for {rentDashboard.current_bill.billing_period} has been settled and reconciled.
+                    Next payment window will open according to your lease schedule.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn-emerald"
+                      onClick={() => {
+                        setActiveReceipt({
+                          receipt_number: rentDashboard.current_bill.receipt_reference || `RCPT-${activeLeaseId}-${rentDashboard.current_bill.billing_period}`,
+                          amount: rentDashboard.current_bill.rent_amount_usd,
+                          reference: rentDashboard.current_bill.payment_reference || 'CONFIRMED',
+                          method: 'Direct Bank ACH Wire',
+                          date: rentDashboard.current_bill.payment_confirmed_at ? new Date(rentDashboard.current_bill.payment_confirmed_at).toLocaleString() : 'Confirmed',
+                          tenant: leaseData?.lease?.tenant1 || 'Resident',
+                          property: leaseData?.lease?.address || 'Community',
+                          unit: leaseData?.lease?.unit || 'Unit',
+                          billing_period: rentDashboard.current_bill.billing_period
+                        });
+                        setShowReceiptModal(true);
+                      }}
+                    >
+                      📄 View Official Receipt
+                    </button>
+                  </div>
                 </div>
+              ) : rentDashboard?.payment_eligibility?.can_pay ? (
+                /* State 2: Eligible To Pay */
+                <form onSubmit={handlePayRent} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                      Payment Amount (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="input-field"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      required
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border)' }}
+                    />
+                  </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                    Payment Method
-                  </label>
-                  <select
-                    className="input-field"
-                    value={payMethod}
-                    onChange={(e) => setPayMethod(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border)' }}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                      Payment Method
+                    </label>
+                    <select
+                      className="input-field"
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border)' }}
+                    >
+                      <option value="ach_transfer">Direct Bank ACH Wire (Zero Surcharge · Reconciled)</option>
+                      <option value="credit_card">Credit / Debit Card (Secure Tokenized Gateway)</option>
+                      <option value="cashiers_check">Cashier's Check / Electronic Voucher</option>
+                    </select>
+                  </div>
+
+                  <div style={{ background: 'var(--surface-hover)', padding: 12, borderRadius: 6, fontSize: 12 }}>
+                    🛡 <strong>Financial Protection:</strong> Zero raw card storage. Server-side idempotency prevents duplicate debit on retries.
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-emerald"
+                    disabled={isPaying}
+                    style={{ padding: '12px 18px', fontSize: 14, fontWeight: 700 }}
                   >
-                    <option value="ach_transfer">Direct Bank ACH Wire (Zero Processing Surcharge)</option>
-                    <option value="credit_card">Credit / Debit Card (3.0% Card Surcharge Audited)</option>
-                    <option value="cashiers_check">Cashier's Check / Electronic Voucher</option>
-                  </select>
+                    {isPaying ? 'Processing Remittance...' : `💳 Pay Rent Now (${fmtMoney(payAmount || 0)})`}
+                  </button>
+                </form>
+              ) : (
+                /* State 3: Upcoming / Ineligible */
+                <div style={{
+                  background: 'var(--surface-hover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 16,
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
+                    🔒 Payment Window Not Yet Active
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>
+                    {rentDashboard?.payment_eligibility?.reason || 'Payment window opens according to lease terms.'}
+                  </div>
                 </div>
-
-                <div style={{ background: 'var(--surface-hover)', padding: 12, borderRadius: 6, fontSize: 12 }}>
-                  🛡 <strong>Financial Integrity Protection:</strong> Idempotent processing ensures duplicate clicks or reloaded webhooks will not double-debit your account.
-                </div>
-
-                <button type="submit" className="btn btn-emerald" disabled={isPaying}>
-                  {isPaying ? 'Processing Remittance...' : `Submit Payment of ${fmtMoney(payAmount || 0)}`}
-                </button>
-              </form>
+              )}
             </div>
 
             {/* Right Column: Submit Maintenance Request */}
@@ -747,6 +981,69 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
                 </button>
               </form>
             </div>
+          </div>
+
+          {/* Previous Rent Payments & Receipts */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>📜 Previous Rent Payments & Reconciled Receipts</h3>
+              <span className="pill cyan" style={{ fontSize: 11 }}>
+                {rentDashboard?.payment_history?.length || 0} Recorded
+              </span>
+            </div>
+            {(!rentDashboard?.payment_history || rentDashboard.payment_history.length === 0) ? (
+              <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>No previous payment receipts on record for this lease.</p>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Billing Period</th>
+                    <th>Payment Date</th>
+                    <th>Amount Paid</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Reference</th>
+                    <th>Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rentDashboard.payment_history.map((tx) => (
+                    <tr key={tx.id || tx.reference}>
+                      <td><strong>{tx.billing_period || 'N/A'}</strong></td>
+                      <td>{tx.confirmed_at ? new Date(tx.confirmed_at).toLocaleString() : 'Confirmed'}</td>
+                      <td><strong>{fmtMoney(tx.amount_usd)}</strong></td>
+                      <td><span className="pill">{tx.payment_method || 'ACH'}</span></td>
+                      <td>
+                        <span className="pill emerald">✓ Reconciled</span>
+                      </td>
+                      <td><code style={{ fontSize: 11 }}>{tx.reference}</code></td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => {
+                            setActiveReceipt({
+                              receipt_number: tx.receipt_reference || `RCPT-${activeLeaseId}-${tx.billing_period || 'TX'}`,
+                              amount: tx.amount_usd,
+                              reference: tx.reference,
+                              method: tx.payment_method || 'ACH Transfer',
+                              date: tx.confirmed_at ? new Date(tx.confirmed_at).toLocaleString() : 'Confirmed',
+                              tenant: leaseData?.lease?.tenant1 || 'Resident',
+                              property: leaseData?.lease?.address || 'Community',
+                              unit: leaseData?.lease?.unit || 'Unit',
+                              billing_period: tx.billing_period || 'Current'
+                            });
+                            setShowReceiptModal(true);
+                          }}
+                        >
+                          📄 View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* Active Work Orders */}
@@ -1380,6 +1677,111 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* View / Download Official Receipt Modal */}
+      {showReceiptModal && activeReceipt && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div className="card" style={{
+            maxWidth: 520,
+            width: '90%',
+            background: 'var(--surface)',
+            border: '2px solid var(--emerald)',
+            borderRadius: 12,
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            padding: 28
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--emerald)', letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                  ENIGMA Official Payment Confirmation
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 800, margin: '4px 0 0 0' }}>
+                  Rent Remittance Receipt
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowReceiptModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-dim)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Receipt Body */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Receipt Number:</span>
+                <strong style={{ fontFamily: 'monospace' }}>{activeReceipt.receipt_number}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Payment Reference:</span>
+                <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{activeReceipt.reference}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Resident:</span>
+                <strong>{activeReceipt.tenant}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Property & Unit:</span>
+                <span>{activeReceipt.property} · {activeReceipt.unit}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Billing Period:</span>
+                <span>{activeReceipt.billing_period}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Payment Method:</span>
+                <span>{activeReceipt.method}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Timestamp (UTC):</span>
+                <span>{activeReceipt.date}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '12px 14px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                borderRadius: 8,
+                marginTop: 8
+              }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--emerald)' }}>Amount Paid:</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--emerald)' }}>{fmtMoney(activeReceipt.amount)}</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => window.print()}
+              >
+                🖨 Print / Save PDF
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setShowReceiptModal(false)}
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
