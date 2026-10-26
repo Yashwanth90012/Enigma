@@ -627,15 +627,44 @@ class ZetarisFinance:
     It is NOT an AI inference provider.
     """
     _views_mounted = False
+    _cached_token: Optional[str] = None
 
     def __init__(self):
         self.base = settings.zetaris_base_url.rstrip('/')
+        self.auth_url = getattr(settings, 'zetaris_auth_url', 'http://host.docker.internal:3000/api/auth/login').rstrip('/')
+        self.admin_email = getattr(settings, 'zetaris_admin_email', 'admin@zetaris.com')
+        self.admin_password = getattr(settings, 'zetaris_admin_password', '')
         self.api_key = settings.zetaris_api_key
         self.org_id = settings.zetaris_org_id
         self.timeout = getattr(settings, 'request_timeout_seconds', 30)
 
     def is_configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) or bool(self.admin_password)
+
+    def _get_bearer_token(self, force_refresh: bool = False) -> str:
+        """Obtain a valid bearer token, using cached session or dynamic admin login."""
+        if not force_refresh and ZetarisFinance._cached_token:
+            return ZetarisFinance._cached_token
+        if not force_refresh and self.api_key and not self.api_key.startswith('your_') and len(self.api_key) > 50:
+            return self.api_key
+        if self.admin_password:
+            try:
+                with httpx.Client(timeout=10) as client:
+                    resp = client.post(
+                        self.auth_url,
+                        json={"username": self.admin_email, "password": self.admin_password}
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        token = data.get("idToken")
+                        if token:
+                            ZetarisFinance._cached_token = token
+                            if data.get("orgId"):
+                                self.org_id = str(data["orgId"])
+                            return token
+            except Exception as e:
+                logger.warning(f"Zetaris auto-authentication failed: {e}")
+        return self.api_key or ""
 
     def sql(self, query: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute a SQL query against the Zetaris Lightning engine.
@@ -643,7 +672,7 @@ class ZetarisFinance:
         Enforces read-only safety, bounded timeouts, and explicit error handling.
         """
         if not self.is_configured():
-            raise ZetarisAuthError('ZETARIS_API_KEY missing: refusing unconfigured Zetaris call')
+            raise ZetarisAuthError('ZETARIS_API_KEY or ZETARIS_ADMIN_PASSWORD missing in .env: refusing unconfigured Zetaris call')
 
         clean_sql = query.strip()
         sql_upper = clean_sql.upper()
@@ -655,41 +684,49 @@ class ZetarisFinance:
                 "Write operations are strictly prohibited: Zetaris integration is configured as read-only."
             )
 
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'X-Org-ID': str(self.org_id),
-            'X-Request-ID': str(uuid.uuid4()),
-            'Content-Type': 'application/json'
-        }
-        # Zetaris REST API requires `source: 'SqlEditor'` to match Circe QuerySource enum
+        token = self._get_bearer_token()
+        if not token:
+            raise ZetarisAuthError('Zetaris authentication failed: unable to acquire valid bearer token')
+
+        req_timeout = timeout or self.timeout
         payload = {
             'queryId': str(uuid.uuid4()),
             'sql': clean_sql,
             'source': 'SqlEditor'
         }
 
-        req_timeout = timeout or self.timeout
-        try:
+        def _do_post(t: str):
+            headers = {
+                'Authorization': f'Bearer {t}',
+                'X-Org-ID': str(self.org_id),
+                'X-Request-ID': str(uuid.uuid4()),
+                'Content-Type': 'application/json'
+            }
             with httpx.Client(timeout=req_timeout) as client:
-                r = client.post(
-                    f'{self.base}/sql-editor/sqls/run',
-                    headers=headers,
-                    json=payload
-                )
-                if r.status_code in (401, 403):
-                    raise ZetarisAuthError(f"Zetaris authentication failed with status {r.status_code}")
-                if r.status_code >= 500:
-                    raise ZetarisConnectionError(f"Zetaris engine server error {r.status_code}: {r.text[:200]}")
-                r.raise_for_status()
-                data = r.json()
+                return client.post(f'{self.base}/sql-editor/sqls/run', headers=headers, json=payload)
 
-                if isinstance(data, dict) and 'msg' in data and 'headers' not in data:
-                    err_msg = str(data['msg'])
-                    if 'TABLE_OR_VIEW_NOT_FOUND' in err_msg:
-                        raise ZetarisQueryError(f"Zetaris schema error: {err_msg.strip()}")
-                    raise ZetarisQueryError(f"Zetaris query error: {err_msg.strip()}")
+        try:
+            r = _do_post(token)
+            # If expired token or invalid, try one refresh if admin password is configured
+            if r.status_code in (400, 401, 403) and self.admin_password:
+                refreshed_token = self._get_bearer_token(force_refresh=True)
+                if refreshed_token and refreshed_token != token:
+                    r = _do_post(refreshed_token)
 
-                return data
+            if r.status_code in (401, 403):
+                raise ZetarisAuthError(f"Zetaris authentication failed with status {r.status_code}")
+            if r.status_code >= 500:
+                raise ZetarisConnectionError(f"Zetaris engine server error {r.status_code}: {r.text[:200]}")
+            r.raise_for_status()
+            data = r.json()
+
+            if isinstance(data, dict) and 'msg' in data and 'headers' not in data:
+                err_msg = str(data['msg'])
+                if 'TABLE_OR_VIEW_NOT_FOUND' in err_msg:
+                    raise ZetarisQueryError(f"Zetaris schema error: {err_msg.strip()}")
+                raise ZetarisQueryError(f"Zetaris query error: {err_msg.strip()}")
+
+            return data
         except (httpx.ConnectError, httpx.NetworkError) as e:
             raise ZetarisConnectionError(f"Cannot connect to Zetaris at {self.base}: {str(e)}") from e
         except httpx.TimeoutException as e:
@@ -839,9 +876,10 @@ class ZetarisFinance:
 
         start_t = datetime.now(timezone.utc)
         try:
+            token = self._get_bearer_token()
             with httpx.Client(timeout=15) as client:
                 headers = {
-                    'Authorization': f'Bearer {self.api_key}',
+                    'Authorization': f'Bearer {token}',
                     'X-Org-ID': str(self.org_id),
                     'X-Request-ID': str(uuid.uuid4()),
                     'Content-Type': 'application/json'
@@ -852,6 +890,11 @@ class ZetarisFinance:
                     'source': 'SqlEditor'
                 }
                 r = client.post(f"{self.base}/sql-editor/sqls/run", headers=headers, json=payload)
+                if r.status_code in (400, 401, 403) and self.admin_password:
+                    refreshed = self._get_bearer_token(force_refresh=True)
+                    if refreshed and refreshed != token:
+                        headers['Authorization'] = f'Bearer {refreshed}'
+                        r = client.post(f"{self.base}/sql-editor/sqls/run", headers=headers, json=payload)
                 elapsed_ms = int((datetime.now(timezone.utc) - start_t).total_seconds() * 1000)
 
                 if r.status_code == 200:

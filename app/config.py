@@ -27,7 +27,10 @@ class Settings(BaseSettings):
 
     # Zetaris federation
     zetaris_base_url: str = 'http://host.docker.internal:8888/api/v1.0'
+    zetaris_auth_url: str = 'http://host.docker.internal:3000/api/auth/login'
     zetaris_api_key: str = ''
+    zetaris_admin_email: str = 'admin@zetaris.com'
+    zetaris_admin_password: str = ''
     zetaris_org_id: str = '1'
     zetaris_invoice_view: str = 'enigma_invoices'
     zetaris_payment_view: str = 'enigma_payments'
