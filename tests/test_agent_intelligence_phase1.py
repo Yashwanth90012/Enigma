@@ -292,14 +292,14 @@ def test_9_habitability_risk_assessment_with_rent_withholding():
     """Verify habitability assessment correlates maintenance ticket with tenant rent ledger."""
     res = client.post(
         "/api/orchestrator/workflows/habitability-risk",
-        json={"work_order_id": "WO-FEF41A"},
+        json={"work_order_id": "WO-0003"},
         headers={"X-Organization-Id": "ORG-APEX"}
     )
     assert res.status_code == 200, res.text
     data = res.json()
 
     assert data["agent_id"] == "maintenance_sla"
-    assert data["case_id"] == "WO-FEF41A"
+    assert data["case_id"] == "WO-0003"
     assert "risk_level" in data
     assert "confidence" in data
     assert len(data["evidence"]) >= 1

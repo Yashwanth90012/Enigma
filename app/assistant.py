@@ -353,7 +353,13 @@ def execute_invoice_approval_orchestration(
     if not inv:
         raise HTTPException(status_code=404, detail=f"Vendor invoice '{invoice_id}' not found.")
 
-    resolved_org = inv[9] or "ORG-APEX"
+    KNOWN_PROPERTY_ORG_MAP = {
+        "PROP-001": "ORG-APEX",
+        "PROP-002": "ORG-VERDANT",
+        "PROP-003": "ORG-BEACON",
+        "PROP-004": "ORG-SKYLINE",
+    }
+    resolved_org = inv[9] or KNOWN_PROPERTY_ORG_MAP.get(inv[4]) or org_id or "ORG-APEX"
     assert_tenant_access(resolved_org, org_id, f"Invoice {invoice_id}")
     total_amount = float(inv[2])
     vendor_name = inv[8]

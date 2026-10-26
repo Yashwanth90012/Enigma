@@ -1,18 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+const ORG_PRESETS = {
+  'ORG-APEX': {
+    propertyId: 'PROP-001',
+    unit: 'Unit 103',
+    defaultWo: 'WO-0003',
+    workOrders: [
+      { id: 'WO-0003', label: 'WO-0003: Plumbing Sinks/Supply Pipe ($314) · PROP-001' },
+      { id: 'WO-0001', label: 'WO-0001: Kitchen Faucet Continuous Drip ($189) · PROP-001' },
+      { id: 'WO-0004', label: 'WO-0004: HVAC Thermostat & Capacitor ($303) · PROP-001' },
+      { id: 'WO-DIRECT', label: 'No Prior WO (Direct Property Order)' }
+    ]
+  },
+  'ORG-VERDANT': {
+    propertyId: 'PROP-002',
+    unit: 'Unit 122',
+    defaultWo: 'WO-0022',
+    workOrders: [
+      { id: 'WO-0022', label: 'WO-0022: Bathroom Basin & P-Trap ($209) · PROP-002' },
+      { id: 'WO-0025', label: 'WO-0025: Solar Heating Service ($299) · PROP-002' },
+      { id: 'WO-0028', label: 'WO-0028: Luxury Appliance Service ($283) · PROP-002' },
+      { id: 'WO-DIRECT', label: 'No Prior WO (Direct Property Order)' }
+    ]
+  },
+  'ORG-BEACON': {
+    propertyId: 'PROP-003',
+    unit: 'Suite 141',
+    defaultWo: 'WO-0041',
+    workOrders: [
+      { id: 'WO-0041', label: 'WO-0041: Commercial HVAC Filter & Coil ($350) · PROP-003' },
+      { id: 'WO-0045', label: 'WO-0045: Security Access System ($420) · PROP-003' },
+      { id: 'WO-DIRECT', label: 'No Prior WO (Direct Property Order)' }
+    ]
+  },
+  'ORG-SKYLINE': {
+    propertyId: 'PROP-004',
+    unit: 'Loft 161',
+    defaultWo: 'WO-0061',
+    workOrders: [
+      { id: 'WO-0061', label: 'WO-0061: Loft Kitchen Disposal & Lighting ($215) · PROP-004' },
+      { id: 'WO-0065', label: 'WO-0065: High-Ceiling Window Seal ($290) · PROP-004' },
+      { id: 'WO-DIRECT', label: 'No Prior WO (Direct Property Order)' }
+    ]
+  }
+};
 
 export default function NewVendorInvoiceModal({
   isOpen,
   onClose,
   vendors,
+  currentOrgId = 'ORG-APEX',
   onGenerateVendorInvoice
 }) {
+  const activePreset = ORG_PRESETS[currentOrgId] || ORG_PRESETS['ORG-APEX'];
   const [vendorId, setVendorId] = useState('VEND-001');
-  const [workOrderId, setWorkOrderId] = useState('WO-0003');
-  const [propertyId, setPropertyId] = useState('PROP-001');
-  const [unit, setUnit] = useState('Unit 101');
+  const [workOrderId, setWorkOrderId] = useState(activePreset.defaultWo);
+  const [propertyId, setPropertyId] = useState(activePreset.propertyId);
+  const [unit, setUnit] = useState(activePreset.unit);
   const [taxRate, setTaxRate] = useState(0.0825);
   const [notes, setNotes] = useState('Maintenance completed under authorized work order.');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const preset = ORG_PRESETS[currentOrgId] || ORG_PRESETS['ORG-APEX'];
+    setPropertyId(preset.propertyId);
+    setUnit(preset.unit);
+    setWorkOrderId(preset.defaultWo);
+  }, [currentOrgId, isOpen]);
 
   const [lineItems, setLineItems] = useState([
     { description: 'Stainless Pull-Out Kitchen Sink Faucet Assembly', quantity: 1, unit_price_usd: 135.00 },
@@ -98,24 +152,36 @@ export default function NewVendorInvoiceModal({
                 onChange={(e) => setWorkOrderId(e.target.value)}
                 style={{ width: '100%', padding: 8, borderRadius: 6, marginTop: 4 }}
               >
-                <option value="WO-0003">WO-0003: Plumbing (Sinks/Drain quote $295)</option>
-                <option value="WO-0010">WO-0010: Bathtub Glaze & P-Trap ($340)</option>
-                <option value="WO-0022">WO-0022: Recessed Kitchen Lighting ($180)</option>
-                <option value="WO-0045">WO-0045: HVAC Capacitor Service ($210)</option>
-                <option value="WO-DIRECT">No Prior WO (Direct Property Order)</option>
+                {(activePreset.workOrders || []).map((wo) => (
+                  <option key={wo.id} value={wo.id}>
+                    {wo.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              Property ID:
-              <input
-                type="text"
+              Property Portfolio:
+              <select
                 value={propertyId}
-                onChange={(e) => setPropertyId(e.target.value)}
+                onChange={(e) => {
+                  const newProp = e.target.value;
+                  setPropertyId(newProp);
+                  // Auto-suggest unit and work order for selected property
+                  if (newProp === 'PROP-001') { setUnit('Unit 103'); setWorkOrderId('WO-0003'); }
+                  else if (newProp === 'PROP-002') { setUnit('Unit 122'); setWorkOrderId('WO-0022'); }
+                  else if (newProp === 'PROP-003') { setUnit('Suite 141'); setWorkOrderId('WO-0041'); }
+                  else if (newProp === 'PROP-004') { setUnit('Loft 161'); setWorkOrderId('WO-0061'); }
+                }}
                 style={{ width: '100%', padding: 8, borderRadius: 6, marginTop: 4 }}
-              />
+              >
+                <option value="PROP-001">PROP-001: Skyline Terrace (Apex)</option>
+                <option value="PROP-002">PROP-002: Verdant Valley (Verdant)</option>
+                <option value="PROP-003">PROP-003: Beacon Bay Plaza (Beacon)</option>
+                <option value="PROP-004">PROP-004: Oakridge Lofts (Skyline)</option>
+              </select>
             </label>
             <label style={{ color: 'var(--text-muted)', fontSize: 12 }}>
               Unit Reference:

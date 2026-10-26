@@ -374,11 +374,14 @@ export default function App() {
   const handleGenerateVendorInvoice = async (invoicePayload) => {
     const res = await api('/api/vendor-invoices/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Organization-Id': currentOrgId || 'ORG-APEX'
+      },
       body: JSON.stringify(invoicePayload)
     });
     alert(`Vendor PDF Invoice ${res.invoice_number} generated & vectorized with RAG.`);
-    await loadVendorAPData();
+    await loadVendorAPData(currentOrgId);
     handleSelectInvoice(res.id);
   };
 
@@ -631,6 +634,7 @@ export default function App() {
             isOpen={isVendorInvoiceModalOpen}
             onClose={() => setIsVendorInvoiceModalOpen(false)}
             vendors={vendors}
+            currentOrgId={currentOrgId}
             onGenerateVendorInvoice={handleGenerateVendorInvoice}
           />
         )}

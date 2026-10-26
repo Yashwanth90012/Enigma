@@ -1,10 +1,31 @@
 import React, { useState, useEffect } from 'react';
 
+const ORG_DEFAULT_LEASES = {
+  'ORG-APEX': 'LEASE-0001',
+  'ORG-VERDANT': 'LEASE-0021',
+  'ORG-BEACON': 'LEASE-0041',
+  'ORG-SKYLINE': 'LEASE-0061',
+};
+
+const ORG_PROPERTY_FALLBACK = {
+  'ORG-APEX': 'PROP-001',
+  'ORG-VERDANT': 'PROP-002',
+  'ORG-BEACON': 'PROP-003',
+  'ORG-SKYLINE': 'PROP-004'
+};
+
 export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APEX' }) {
   const [activeTab, setActiveTab] = useState('overview'); // overview, move_in, renewal, move_out, preferences
-  const [activeLeaseId, setActiveLeaseId] = useState('LEASE-0001');
+  const [activeLeaseId, setActiveLeaseId] = useState(ORG_DEFAULT_LEASES[currentOrgId] || 'LEASE-0001');
   const [leaseData, setLeaseData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Auto-switch to a representative lease whenever the organization changes
+  useEffect(() => {
+    if (currentOrgId && ORG_DEFAULT_LEASES[currentOrgId]) {
+      setActiveLeaseId(ORG_DEFAULT_LEASES[currentOrgId]);
+    }
+  }, [currentOrgId]);
 
   // Workflow states
   const [moveInData, setMoveInData] = useState(null);
@@ -147,7 +168,7 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
         headers: getHeaders(),
         body: JSON.stringify({
           lease_id: activeLeaseId,
-          property_id: leaseData?.lease?.property_id || 'PROP-001',
+          property_id: leaseData?.lease?.property_id || ORG_PROPERTY_FALLBACK[currentOrgId] || 'PROP-001',
           unit: leaseData?.lease?.unit || 'Unit 1A',
           description: maintDesc,
           reported_by: leaseData?.lease?.tenant1 || 'Resident',
@@ -216,7 +237,7 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
         body: JSON.stringify({
           title: docTitle,
           body: docBody,
-          property_id: leaseData?.lease?.property_id || 'PROP-001',
+          property_id: leaseData?.lease?.property_id || ORG_PROPERTY_FALLBACK[currentOrgId] || 'PROP-001',
           lease_id: activeLeaseId
         })
       });
@@ -516,6 +537,10 @@ export default function ResidentPortal({ onOpenPayModal, currentOrgId = 'ORG-APE
               <option value="LEASE-0030">LEASE-0030 (ORG-VERDANT · Preferences)</option>
               <option value="LEASE-0031">LEASE-0031 (ORG-VERDANT · Renewal Hub)</option>
               <option value="LEASE-0032">LEASE-0032 (ORG-VERDANT · Move-Out)</option>
+              <option value="LEASE-0041">LEASE-0041 (ORG-BEACON · Commercial Active)</option>
+              <option value="LEASE-0050">LEASE-0050 (ORG-BEACON · Expiring)</option>
+              <option value="LEASE-0061">LEASE-0061 (ORG-SKYLINE · Urban Active)</option>
+              <option value="LEASE-0070">LEASE-0070 (ORG-SKYLINE · Move-In Pending)</option>
             </select>
           </div>
         </div>

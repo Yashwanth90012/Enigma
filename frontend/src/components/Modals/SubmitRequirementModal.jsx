@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function SubmitRequirementModal({
   isOpen,
@@ -14,6 +14,12 @@ export default function SubmitRequirementModal({
   const [specification, setSpecification] = useState('');
   const [submittedBy, setSubmittedBy] = useState('Property Manager');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (currentOrgId) {
+      setOrgId(currentOrgId);
+    }
+  }, [currentOrgId, isOpen]);
 
   if (!isOpen) return null;
 

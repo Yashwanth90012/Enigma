@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+const ORG_PROPERTY_MAP = {
+  'ORG-APEX': { propertyId: 'PROP-001', defaultLease: 'LEASE-0001', name: 'Skyline Terrace (PROP-001)' },
+  'ORG-VERDANT': { propertyId: 'PROP-002', defaultLease: 'LEASE-0021', name: 'Verdant Valley Estates (PROP-002)' },
+  'ORG-BEACON': { propertyId: 'PROP-003', defaultLease: 'LEASE-0041', name: 'Beacon Bay Commercial (PROP-003)' },
+  'ORG-SKYLINE': { propertyId: 'PROP-004', defaultLease: 'LEASE-0061', name: 'Oakridge Modern Lofts (PROP-004)' },
+};
+
 export default function DocumentIntelligenceHub({ currentOrgId = 'ORG-APEX' }) {
   const [documents, setDocuments] = useState([]);
   const [totalDocuments, setTotalDocuments] = useState(0);
@@ -18,13 +25,21 @@ export default function DocumentIntelligenceHub({ currentOrgId = 'ORG-APEX' }) {
   const [reindexResult, setReindexResult] = useState(null);
 
   // Upload / Process Document Form
+  const defaultCfg = ORG_PROPERTY_MAP[currentOrgId] || ORG_PROPERTY_MAP['ORG-APEX'];
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadBody, setUploadBody] = useState('');
-  const [uploadLeaseId, setUploadLeaseId] = useState('LEASE-0001');
-  const [uploadPropertyId, setUploadPropertyId] = useState('PROP-001');
+  const [uploadLeaseId, setUploadLeaseId] = useState(defaultCfg.defaultLease);
+  const [uploadPropertyId, setUploadPropertyId] = useState(defaultCfg.propertyId);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState(null);
+
+  // Sync upload defaults whenever current organization changes
+  useEffect(() => {
+    const cfg = ORG_PROPERTY_MAP[currentOrgId] || ORG_PROPERTY_MAP['ORG-APEX'];
+    setUploadPropertyId(cfg.propertyId);
+    setUploadLeaseId(cfg.defaultLease);
+  }, [currentOrgId]);
 
   // Cross-validation state
   const [isCrossValidating, setIsCrossValidating] = useState(false);
@@ -107,14 +122,20 @@ export default function DocumentIntelligenceHub({ currentOrgId = 'ORG-APEX' }) {
     setIsProcessing(true);
     setProcessResult(null);
     try {
+      const activeProp = uploadPropertyId.trim() || ORG_PROPERTY_MAP[currentOrgId]?.propertyId || 'PROP-001';
+      const activeLease = uploadLeaseId.trim() || ORG_PROPERTY_MAP[currentOrgId]?.defaultLease || null;
       const res = await fetch('/api/documents/process', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Organization-Id': currentOrgId || 'ORG-APEX'
+        },
         body: JSON.stringify({
           title: uploadTitle.trim(),
           body: uploadBody.trim(),
-          lease_id: uploadLeaseId.trim() || null,
-          property_id: uploadPropertyId.trim() || 'PROP-001'
+          lease_id: activeLease,
+          property_id: activeProp,
+          organization_id: currentOrgId
         })
       });
 
@@ -567,14 +588,17 @@ export default function DocumentIntelligenceHub({ currentOrgId = 'ORG-APEX' }) {
                   />
                 </div>
                 <div>
-                  <label className="form-label">Property ID</label>
-                  <input
-                    type="text"
+                  <label className="form-label">Property Association</label>
+                  <select
                     className="decision-input"
-                    placeholder="PROP-001"
                     value={uploadPropertyId}
                     onChange={(e) => setUploadPropertyId(e.target.value)}
-                  />
+                  >
+                    <option value="PROP-001">PROP-001 (Skyline Terrace · ORG-APEX)</option>
+                    <option value="PROP-002">PROP-002 (Verdant Valley · ORG-VERDANT)</option>
+                    <option value="PROP-003">PROP-003 (Beacon Bay Plaza · ORG-BEACON)</option>
+                    <option value="PROP-004">PROP-004 (Oakridge Lofts · ORG-SKYLINE)</option>
+                  </select>
                 </div>
               </div>
 

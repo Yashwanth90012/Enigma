@@ -148,7 +148,7 @@ class SettingsUpdateRequest(BaseModel):
 class GenerateVendorInvoiceRequest(BaseModel):
     vendor_id: str
     work_order_id: str
-    property_id: str = 'PROP-001'
+    property_id: Optional[str] = None
     unit: str = 'Unit 4B'
     line_items: List[Dict[str, Any]]
     tax_rate: float = 0.0825
@@ -183,7 +183,7 @@ class RentalApplicationRequest(BaseModel):
 
 class MaintenanceTicketRequest(BaseModel):
     lease_id: str = "LEASE-0001"
-    property_id: str = "PROP-001"
+    property_id: Optional[str] = None
     unit: Optional[str] = "Unit 1A"
     description: str
     reported_by: str = "Resident"
@@ -192,8 +192,9 @@ class MaintenanceTicketRequest(BaseModel):
 class ProcessDocumentRequest(BaseModel):
     title: str
     body: str
-    property_id: str = "PROP-001"
+    property_id: Optional[str] = None
     lease_id: Optional[str] = None
+    organization_id: Optional[str] = None
 
 class TenantPaymentRequest(BaseModel):
     lease_id: str
@@ -962,8 +963,19 @@ def get_vendor_invoice_pdf(invoice_id: str):
     )
 
 @app.post('/api/vendor-invoices/generate')
-def create_vendor_invoice(req: GenerateVendorInvoiceRequest):
+def create_vendor_invoice(
+    req: GenerateVendorInvoiceRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """Generate authentic PDF invoice for maintenance items (sink, tub, lights, etc.) and index into RAG."""
+    effective_org = resolve_effective_org(x_organization_id, None)
+    ORG_TO_DEFAULT_PROP = {
+        'ORG-APEX': 'PROP-001',
+        'ORG-VERDANT': 'PROP-002',
+        'ORG-BEACON': 'PROP-003',
+        'ORG-SKYLINE': 'PROP-004'
+    }
+
     with db() as conn:
         v = conn.execute(
             "SELECT name, trade, contact_email, phone, payment_terms FROM vendors WHERE vendor_id = %s",
@@ -985,7 +997,8 @@ def create_vendor_invoice(req: GenerateVendorInvoiceRequest):
         ).fetchone()
 
     lease_id = wo[0] if wo else f"LEASE-{(abs(hash(req.work_order_id)) % 25) + 1:04d}"
-    prop_id = req.property_id or (wo[1] if wo else 'PROP-001')
+    default_prop = ORG_TO_DEFAULT_PROP.get(effective_org, 'PROP-001')
+    prop_id = req.property_id or (wo[1] if wo else default_prop)
     unit = req.unit or (wo[2] if wo else 'Unit 4B')
 
     now_str = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
@@ -1209,13 +1222,32 @@ def get_applications(property_id: Optional[str] = None):
 # =====================================================================
 
 @app.post('/api/maintenance/submit')
-def submit_maintenance_ticket(req: MaintenanceTicketRequest):
+def submit_maintenance_ticket(
+    req: MaintenanceTicketRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """Submit and automatically triage a maintenance request, assigning SLA and matching vendor."""
     from .maintenance_agent import submit_and_triage_ticket
+    effective_org = resolve_effective_org(x_organization_id, None)
+    ORG_TO_DEFAULT_PROP = {
+        'ORG-APEX': 'PROP-001',
+        'ORG-VERDANT': 'PROP-002',
+        'ORG-BEACON': 'PROP-003',
+        'ORG-SKYLINE': 'PROP-004'
+    }
+    resolved_prop = req.property_id
+    if not resolved_prop and req.lease_id:
+        with db() as conn:
+            l_row = conn.execute("SELECT property_id FROM leases WHERE lease_id = %s", (req.lease_id,)).fetchone()
+            if l_row and l_row[0]:
+                resolved_prop = l_row[0]
+    if not resolved_prop:
+        resolved_prop = ORG_TO_DEFAULT_PROP.get(effective_org, 'PROP-001')
+
     try:
         return submit_and_triage_ticket(
             lease_id=req.lease_id,
-            property_id=req.property_id,
+            property_id=resolved_prop,
             unit=req.unit or "Unit 1A",
             description=req.description,
             reported_by=req.reported_by,
@@ -1235,14 +1267,34 @@ def get_sla_breaches():
 # =====================================================================
 
 @app.post('/api/documents/process')
-def process_new_document(req: ProcessDocumentRequest):
+def process_new_document(
+    req: ProcessDocumentRequest,
+    x_organization_id: Optional[str] = Header(None, alias="X-Organization-Id")
+):
     """Classify document, extract structured fields, check duplicate hashes, and index in pgvector."""
     from .document_agent import process_document
+    effective_org = resolve_effective_org(x_organization_id, req.organization_id)
+    ORG_TO_DEFAULT_PROP = {
+        'ORG-APEX': 'PROP-001',
+        'ORG-VERDANT': 'PROP-002',
+        'ORG-BEACON': 'PROP-003',
+        'ORG-SKYLINE': 'PROP-004'
+    }
+
+    resolved_prop = req.property_id
+    if not resolved_prop and req.lease_id:
+        with db() as conn:
+            l_row = conn.execute("SELECT property_id FROM leases WHERE lease_id = %s", (req.lease_id,)).fetchone()
+            if l_row and l_row[0]:
+                resolved_prop = l_row[0]
+    if not resolved_prop:
+        resolved_prop = ORG_TO_DEFAULT_PROP.get(effective_org, 'PROP-001')
+
     try:
         return process_document(
             title=req.title,
             body=req.body,
-            property_id=req.property_id,
+            property_id=resolved_prop,
             lease_id=req.lease_id
         )
     except Exception as e:
