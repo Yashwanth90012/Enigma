@@ -22,7 +22,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
 
-DEMO_TARGET_EMAIL = "puligillayashwanth776@gmail.com"
+# Optional demo recipient override (configurable via environment variable)
+DEMO_TARGET_EMAIL = os.getenv("DEMO_TARGET_EMAIL", "")
 
 def get_smtp_config() -> Dict[str, Any]:
     """Retrieve SMTP configuration with fallback to environment variables and .env file."""

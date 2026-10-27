@@ -13,10 +13,10 @@
 ## 1. Task 1: Persistent SaaS Organizations and Feature Requests
 
 ### Baseline Gap
-Previously, [`app/saas.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/saas.py) maintained `_organizations` and `_feature_requests` as in-memory Python lists. Any newly onboarded customer organization, submitted requirement, or upvote was lost upon container restart.
+Previously, [`app/saas.py`](../app/saas.py) maintained `_organizations` and `_feature_requests` as in-memory Python lists. Any newly onboarded customer organization, submitted requirement, or upvote was lost upon container restart.
 
 ### Implementation Details
-1. **Relational Schema Migrations ([`app/database.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py)):**
+1. **Relational Schema Migrations ([`app/database.py`](../app/database.py)):**
    - **`organizations` Table:**
      - Columns: `id TEXT PRIMARY KEY`, `name TEXT NOT NULL`, `portfolio_type TEXT`, `tier TEXT`, `aws_region TEXT`, `active_units INT`, `contact_email TEXT`, `primary_ledger TEXT`, `ai_engine TEXT`, `description TEXT`, `created_at TIMESTAMPTZ`.
      - Seeded initial enterprise customers (`ORG-APEX`, `ORG-BEACON`, `ORG-VERDANT`, `ORG-SKYLINE`) using `ON CONFLICT (id) DO NOTHING` to guarantee idempotency.
@@ -26,17 +26,17 @@ Previously, [`app/saas.py`](file:///c:/Users/pulig/Downloads/enigma-project/enig
    - **`feature_request_votes` Table:**
      - Columns: `request_id TEXT REFERENCES feature_requests(id) ON DELETE CASCADE`, `voter_id TEXT NOT NULL`, `created_at TIMESTAMPTZ DEFAULT now()`.
      - Composite Primary Key: `(request_id, voter_id)` ensuring strict duplicate-vote prevention.
-2. **Service Layer Refactoring ([`app/saas.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/saas.py)):**
+2. **Service Layer Refactoring ([`app/saas.py`](../app/saas.py)):**
    - `list_organizations()`: Queries PostgreSQL with `ORDER BY created_at ASC`.
    - `onboard_organization(data)`: Idempotently inserts into `organizations`.
    - `list_feature_requests(org_id, category)`: Supports multi-tenant scoping and domain category filtering with prioritization ordering (`critical_blocker` first, followed by vote tally).
    - `submit_feature_request(data)`: Atomic insertion into `feature_requests` and records initial vote in `feature_request_votes`.
    - `upvote_feature_request(req_id, voter_id)`: Checks for existing votes by `voter_id`. Duplicate votes return `status: duplicate_prevented` and do not increment vote counts.
-3. **API & Route Preservation ([`app/main.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/main.py)):**
+3. **API & Route Preservation ([`app/main.py`](../app/main.py)):**
    - Routes `GET/POST /api/saas/organizations`, `GET/POST /api/saas/feature-requests`, and `POST /api/saas/feature-requests/{id}/upvote` maintained 100% backward compatibility with existing frontend payload shapes.
 
 ### Verification Evidence
-- Automated test suite [`tests/test_saas_persistence.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/tests/test_saas_persistence.py) created:
+- Automated test suite [`tests/test_saas_persistence.py`](../tests/test_saas_persistence.py) created:
   - `test_organization_persistence_across_fresh_connections`: PASSED.
   - `test_feature_request_persistence_and_relationships`: PASSED.
   - `test_upvote_persistence_and_duplicate_vote_protection`: PASSED.
@@ -46,24 +46,24 @@ Previously, [`app/saas.py`](file:///c:/Users/pulig/Downloads/enigma-project/enig
 ## 2. Task 2: Upgrade RAG to Genuine Semantic Embeddings
 
 ### Baseline Gap
-Previously, [`app/database.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py) generated 384-dimensional hashed lexical vectors using SHA-256 token hashing (`simple_embedding()`). This provided zero semantic understanding of contractual lease covenants.
+Previously, [`app/database.py`](../app/database.py) generated 384-dimensional hashed lexical vectors using SHA-256 token hashing (`simple_embedding()`). This provided zero semantic understanding of contractual lease covenants.
 
 ### Implementation Details
-1. **Configurable Embedding Provider Abstraction ([`app/embeddings.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/embeddings.py)):**
+1. **Configurable Embedding Provider Abstraction ([`app/embeddings.py`](../app/embeddings.py)):**
    - **`BaseEmbeddingProvider`**: Defines common interface for `embed_text()`, `embed_batch()`, and `health_check()`.
    - **`NvidiaNimEmbeddingProvider`**: Connects via HTTPS to `https://integrate.api.nvidia.com/v1/embeddings` using live model `nvidia/nemotron-3.5-embed-1b`. Configured with Matryoshka Representation Learning (MRL) dimension truncation to **384 dimensions**, ensuring native compatibility with PostgreSQL `pgvector(384)` and HNSW cosine distance indexing (`chunks_hnsw`).
    - **`OfflineDeterministicEmbeddingProvider`**: Retains deterministic token-hashing algorithm (`deterministic-hash-v1`) as a resilient offline fallback when remote networks or keys are unavailable.
    - **`UnifiedEmbeddingProvider`**: Coordinates multi-tier failover (`nvidia` -> `offline`). Automatically tracks vector provenance (`model_name`, `is_semantic`, `fallback_used`).
-2. **Database Tracking & Schema Migration ([`app/database.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py)):**
+2. **Database Tracking & Schema Migration ([`app/database.py`](../app/database.py)):**
    - Added metadata columns to `chunks` table:
      - `model_name TEXT DEFAULT 'deterministic-hash-v1'`
      - `is_semantic BOOLEAN DEFAULT FALSE`
-3. **RAG Pipeline Upgrade ([`app/rag.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/rag.py)):**
+3. **RAG Pipeline Upgrade ([`app/rag.py`](../app/rag.py)):**
    - `index_document()`: Generates passage embeddings via `embedding_service.embed_batch(parts, input_type="passage")` and stores vector metadata.
    - `retrieve()`: Generates query vector via `embedding_service.embed_text(query, input_type="query")`. Combines pgvector cosine similarity (`<=>`) with PostgreSQL Full-Text Search GIN (`@@ plainto_tsquery('english', %s)`) using Reciprocal Rank Fusion (RRF: `score = sum(1 / (60 + rank))`).
    - `reindex_all_documents(limit)`: Safe re-indexing pipeline allowing batch migration of existing documents to neural embeddings without dropping tables.
    - `get_rag_status()`: Diagnostics exposing active embedding health, total chunks, semantic chunk count, and models present in the index.
-4. **Endpoints Added ([`app/main.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/main.py)):**
+4. **Endpoints Added ([`app/main.py`](../app/main.py)):**
    - `GET /api/documents/rag/status`: Real-time RAG index statistics.
    - `POST /api/documents/rag/reindex`: Admin batch re-indexing endpoint.
    - `GET /api/integrations/embeddings/health`: Live vector embedding service diagnostic probe.
@@ -78,7 +78,7 @@ Tested conceptual retrieval where query shares **zero common keywords** with the
 
 ## 3. Configuration & Diagnostics
 
-Added settings to [`app/config.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/config.py), [`.env.example`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/.env.example), and [`.env`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/.env):
+Added settings to [`app/config.py`](../app/config.py), [`.env.example`](../.env.example), and [`.env`](../.env):
 
 ```env
 # ---------------------------------------------------------------------

@@ -12,6 +12,8 @@ import hashlib
 import time
 import json
 import uuid
+import os
+import logging
 from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timezone
 
@@ -19,7 +21,33 @@ from .database import db
 from .audit import log_audit_event
 from .config import settings
 
-WEBHOOK_SECRET = "whsec_enigma_sandbox_secret_2026_test_key"
+logger = logging.getLogger(__name__)
+
+
+def get_webhook_secret() -> str:
+    """Retrieve webhook signing secret from configuration or environment.
+
+    In production mode, raises ValueError if no secure secret is configured.
+    In development/test mode, provides an explicitly scoped fallback secret.
+    """
+    secret = (
+        getattr(settings, "stripe_webhook_secret", "")
+        or getattr(settings, "sandbox_webhook_secret", "")
+        or os.getenv("STRIPE_WEBHOOK_SECRET", "")
+        or os.getenv("SANDBOX_WEBHOOK_SECRET", "")
+    )
+    if secret:
+        return secret
+    env = getattr(settings, "environment", "development").lower()
+    if env == "production":
+        raise ValueError(
+            "Production security failure: A valid STRIPE_WEBHOOK_SECRET or SANDBOX_WEBHOOK_SECRET "
+            "must be configured via environment variable in production mode."
+        )
+    return "whsec_test_mode_ephemeral_sandbox_secret"
+
+
+WEBHOOK_SECRET = get_webhook_secret()
 
 
 class PaymentProvider:
@@ -42,7 +70,7 @@ class PaymentProvider:
         self,
         payload_bytes: bytes,
         signature_header: str,
-        secret: str
+        secret: Optional[str] = None
     ) -> bool:
         raise NotImplementedError
 
@@ -57,8 +85,12 @@ class PaymentProvider:
 class SandboxPaymentProvider(PaymentProvider):
     """Production-grade Sandbox Gateway with HMAC-SHA256 signed webhooks and idempotency."""
 
-    def __init__(self, secret: str = WEBHOOK_SECRET):
-        self.secret = secret
+    def __init__(self, secret: Optional[str] = None):
+        self._secret = secret
+
+    @property
+    def secret(self) -> str:
+        return self._secret or get_webhook_secret()
 
     def create_checkout_session(
         self,

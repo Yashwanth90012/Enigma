@@ -39,7 +39,7 @@ Phase 7 systematically validated the complete ENIGMA property management applica
   - Vendors: `VEND-P7-HVAC`, `VEND-P7-PLUMB`
 - **Zero Production Mutations:**
   - Real bank rails were never contacted; all financial adjustments were committed to isolated PostgreSQL ledger tables.
-  - Zero external emails were sent; all notification dispatches were captured by internal queue tables or redirected to the configured test mailbox (`puligillayashwanth776@gmail.com`).
+  - Zero external emails were sent; all notification dispatches were captured by internal queue tables or redirected to the configured test mailbox (`DEMO_TARGET_EMAIL` or `tenant@example.com`).
 
 ### 1.3 Service Boundaries & Mocks
 | Service / Boundary | Integration Type | Verification Detail |
@@ -189,19 +189,19 @@ During Phase 7 execution, 4 subtle integration defects were identified, fixed, a
 ### Defect 1: PostgreSQL NUL Byte Crash on Corrupted Documents
 - **Failure:** Ingesting corrupted binary documents containing `\x00` bytes caused psycopg `DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`.
 - **Root Cause:** Raw document bodies were directly passed to PostgreSQL parameterized SQL without binary sanitization.
-- **Fix:** Added `body = body.replace("\x00", "")` in [app/document_agent.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/document_agent.py#L162-L165).
+- **Fix:** Added `body = body.replace("\x00", "")` in [app/document_agent.py](../app/document_agent.py#L162-L165).
 - **Regression Test:** `tests/test_e2e_reliability_phase7.py::test_s2_03_corrupted_or_empty_document_triggers_controlled_abstention`
 
 ### Defect 2: Lowercase Invoice Number Truncation
 - **Failure:** Invoice numbers with lowercase characters (e.g. `INV-P7-edeb80`) were truncated to `INV-P7-` by regex.
 - **Root Cause:** Regex in `extract_structured_fields` was defined as `r'\b(?:INV|VINV)-[A-Z0-9-]+\b'` without case-insensitive matching.
-- **Fix:** Updated regex to `r'\b(?:INV|VINV)-[A-Za-z0-9-]+\b'` in [app/document_agent.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/document_agent.py#L138-L141).
+- **Fix:** Updated regex to `r'\b(?:INV|VINV)-[A-Za-z0-9-]+\b'` in [app/document_agent.py](../app/document_agent.py#L138-L141).
 - **Regression Test:** `tests/test_e2e_reliability_phase7.py::test_s2_01_document_ingestion_classification_and_field_extraction`
 
 ### Defect 3: Pending Approval Variance Self-Blocking Outcome Verification
 - **Failure:** After an authorized Property Manager approved an invoice in `waiting_for_approval`, the workflow state remained stuck in `needs_review` instead of transitioning to `completed`.
 - **Root Cause:** When the invoice was routed for approval, `compliance_agent` created an open risk finding `Vendor AP Variance (UNPAID_PENDING_APPROVAL)`. In `verify_workflow_outcome()`, the stop-payment hold query counted all open risk findings for that invoice, effectively causing the approval requirement finding to block its own approval!
-- **Fix:** In [app/orchestrator.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L1093-L1105), `approve_workflow()` now automatically marks any pending approval variance as `resolved` with the reviewer's signature, and `verify_workflow_outcome()` excludes pending approval notes from unconditional stop-payment holds.
+- **Fix:** In [app/orchestrator.py](../app/orchestrator.py#L1093-L1105), `approve_workflow()` now automatically marks any pending approval variance as `resolved` with the reviewer's signature, and `verify_workflow_outcome()` excludes pending approval notes from unconditional stop-payment holds.
 - **Regression Test:** `tests/test_e2e_reliability_phase7.py::test_s2_07_authorized_human_approval_advances_workflow_to_completion`
 
 ### Defect 4: Payment Idempotency Reference Collisions on Repeated Test Runs

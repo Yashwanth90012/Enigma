@@ -73,12 +73,26 @@ class Settings(BaseSettings):
     embedding_base_url: str = 'https://integrate.api.nvidia.com/v1'
     embedding_dimension: int = 384
 
+    # Environment and Deployment Mode
+    environment: str = 'development'  # 'development', 'test', 'production'
+
     # Security, JWT Authentication & API Secrets
     secret_key: str = 'equilibra_dev_secret_key_change_in_production'
     jwt_algorithm: str = 'HS256'
     access_token_expire_minutes: int = 1440
 
+    sandbox_webhook_secret: str = ''
+
     request_timeout_seconds: int = 30
     max_agent_rounds: int = 3
 
+    def validate_production_configuration(self) -> None:
+        """Explicit check ensuring production cannot silently fall back to demonstration secrets."""
+        if self.environment.lower() == 'production':
+            if not self.secret_key or self.secret_key == 'equilibra_dev_secret_key_change_in_production' or len(self.secret_key) < 32:
+                raise ValueError("In production mode, a strong SECRET_KEY (min 32 characters) must be configured via environment variable.")
+            if not self.stripe_webhook_secret and not self.sandbox_webhook_secret:
+                raise ValueError("In production mode, a webhook secret (STRIPE_WEBHOOK_SECRET or SANDBOX_WEBHOOK_SECRET) must be configured.")
+
 settings = Settings()
+

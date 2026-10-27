@@ -457,14 +457,30 @@ class UnifiedEmbeddingProvider:
         active = self.get_active_provider_name()
         meterless_health = self.meterless_provider.health_check()
         nim_health = self.nim_provider.health_check()
+        offline_health = self.offline_provider.health_check()
+
+        # Determine if runtime fallback is engaged
+        runtime_effective_provider = active
+        if active == "meterless" and meterless_health.get("status") == "unreachable":
+            runtime_effective_provider = "offline" if not (self.nim_provider.is_configured() and nim_health.get("status") == "healthy") else "nvidia"
+        elif active == "nvidia" and nim_health.get("status") != "healthy":
+            runtime_effective_provider = "offline"
+
+        is_semantic = (runtime_effective_provider in ("meterless", "nvidia")) and (
+            (runtime_effective_provider == "meterless" and meterless_health.get("status") in ("healthy", "unauthorized"))
+            or (runtime_effective_provider == "nvidia" and nim_health.get("status") == "healthy")
+        )
+
         return {
             "configured_mode": getattr(settings, "embedding_provider", "meterless"),
             "active_provider": active,
-            "is_semantic": True,
+            "runtime_effective_provider": runtime_effective_provider,
+            "is_semantic": is_semantic,
+            "semantic_quality_warning": None if is_semantic else "Active provider is offline deterministic mock vector; semantic conceptual matching is disabled in this mode.",
             "expected_dimension": getattr(settings, "embedding_dimension", 384),
             "meterless_tier": meterless_health,
             "nvidia_tier": nim_health,
-            "offline_tier": self.offline_provider.health_check()
+            "offline_tier": offline_health
         }
 
 

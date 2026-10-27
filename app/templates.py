@@ -37,8 +37,8 @@ VARIABLE_CATALOG: Dict[str, Dict[str, Any]] = {
     "resident_email": {
         "description": "Registered contact email address of the resident",
         "category": "resident",
-        "sample": "puligillayashwanth776@gmail.com",
-        "fallback": "puligillayashwanth776@gmail.com"
+        "sample": "tenant@example.com",
+        "fallback": "tenant@example.com"
     },
     "property_name": {
         "description": "Commercial building or community name",
@@ -239,8 +239,8 @@ VARIABLE_CATALOG: Dict[str, Dict[str, Any]] = {
     "vendor_email": {
         "description": "Accounts receivable contact email for vendor",
         "category": "vendor",
-        "sample": "puligillayashwanth776@gmail.com",
-        "fallback": "puligillayashwanth776@gmail.com"
+        "sample": "billing@vendor.example.com",
+        "fallback": "billing@vendor.example.com"
     },
     "invoice_number": {
         "description": "Vendor billing invoice number",
@@ -336,8 +336,8 @@ VARIABLE_CATALOG: Dict[str, Dict[str, Any]] = {
     "manager_contact": {
         "description": "Property management office email address",
         "category": "operational",
-        "sample": "puligillayashwanth776@gmail.com",
-        "fallback": "puligillayashwanth776@gmail.com"
+        "sample": "manager@equilibra.ai",
+        "fallback": "manager@equilibra.ai"
     },
     "manager_phone": {
         "description": "Property management office telephone number",

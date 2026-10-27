@@ -247,8 +247,10 @@ def test_incompatible_embedding_models_prevention(monkeypatch):
     monkeypatch.setattr(embedding_service, "get_active_provider_name", lambda: "offline")
     index_document(doc_id, lease_id, "PROP-001", "rules", "Gym Rules", "Swimming pool hours are 8am to 10pm daily.")
 
-    # Now simulate active semantic model query
+    # Now simulate active semantic model query (mocked locally to remove external network dependency)
     monkeypatch.setattr(embedding_service, "get_active_provider_name", lambda: "nvidia")
+    monkeypatch.setattr(embedding_service.nim_provider, "is_configured", lambda: True)
+    monkeypatch.setattr(embedding_service.nim_provider, "embed_text", lambda text, input_type="query": [0.05] * 384)
     # Keyword search will still find it via FTS, but vector comparison against different model is safely skipped
     results = retrieve("Swimming pool hours", lease_id=lease_id, top_k=2)
     assert len(results) >= 1

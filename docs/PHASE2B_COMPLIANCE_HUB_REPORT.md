@@ -25,7 +25,7 @@ In strict conformance with architectural constraints:
 
 ## 2. Central Risk Register & Database Changes
 
-Executed in [app/database.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py):
+Executed in [app/database.py](../app/database.py):
 
 ### A. Table `risk_findings`
 Persists detected issues with comprehensive metadata, evidence JSON, statutory citations, and stable deduplication keys:
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS approval_history (
 
 ## 3. Risk Detection Rules & Evidence Sources
 
-The risk scanner ([app/compliance_agent.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/compliance_agent.py)) executes automated evaluation across four core operational domains:
+The risk scanner ([app/compliance_agent.py](../app/compliance_agent.py)) executes automated evaluation across four core operational domains:
 
 ### A. Lease & Resident Workflows
 1. `RULE_LEASE_EXPIRATION_APPROACHING`: Active lease approaching expiration ($\le 90$ days) without a confirmed resident decision (`severity: high` if $\le 30$ days else `medium`).
@@ -141,7 +141,7 @@ If a property's `state` is missing, invalid, or not present in the statutory reg
 
 ## 5. API Endpoints Mounted & Verified
 
-Mounted in [app/main.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/main.py):
+Mounted in [app/main.py](../app/main.py):
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -161,7 +161,7 @@ Mounted in [app/main.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-
 
 ## 6. Frontend Dashboard Integration
 
-Implemented in [frontend/src/components/ComplianceRiskHub.jsx](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/frontend/src/components/ComplianceRiskHub.jsx) and wired into [frontend/src/App.jsx](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/frontend/src/App.jsx) and [frontend/src/components/HubSwitcher.jsx](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/frontend/src/components/HubSwitcher.jsx):
+Implemented in [frontend/src/components/ComplianceRiskHub.jsx](../frontend/src/components/ComplianceRiskHub.jsx) and wired into [frontend/src/App.jsx](../frontend/src/App.jsx) and [frontend/src/components/HubSwitcher.jsx](../frontend/src/components/HubSwitcher.jsx):
 
 1. **Metrics Summary Rack**: Real-time counters for High Priority Risks, Pending Approvals, Total Active Findings, and Resolved/Dismissed.
 2. **Tabbed Navigation**:
@@ -184,7 +184,7 @@ Implemented in [frontend/src/components/ComplianceRiskHub.jsx](file:///c:/Users/
 
 ## 7. AI Assistant Integration
 
-Extended [app/assistant.py](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/assistant.py):
+Extended [app/assistant.py](../app/assistant.py):
 - Detects compliance, risk, finding, statutory, or approval intents.
 - Invokes backend tool `query_compliance_risk_register`.
 - Retrieves verified findings from PostgreSQL, explains triggering rules using underlying evidence, references source record IDs, and recommends next steps without bypassing human approval gates.

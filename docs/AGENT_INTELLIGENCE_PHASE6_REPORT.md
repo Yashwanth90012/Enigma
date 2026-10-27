@@ -14,7 +14,7 @@ Phase 6 upgrades ENIGMA's Assistant and Orchestrator from ephemeral in-memory wo
 Prior to Phase 6, workflow coordination existed only as synchronous Python control flows (`execute_invoice_approval_orchestration`, `execute_lease_cross_validation_orchestration`). If the API process restarted, crashed, or encountered transient infrastructure timeouts mid-workflow, all in-flight state was lost, leaving only disconnected step execution logs. Furthermore, workflows could not dynamically adapt to intermediate agent abstentions or invoice discrepancies without hardcoded logic, and lacked formal outcome verification and separation-of-duties enforcement.
 
 In Phase 6, we designed and implemented:
-1. **Durable PostgreSQL Workflow State:** Two dedicated tables—[`orchestration_workflows`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py#L525) and [`orchestration_steps`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py#L552)—track top-level workflow lifecycles and DAG step executions across container restarts.
+1. **Durable PostgreSQL Workflow State:** Two dedicated tables—[`orchestration_workflows`](../app/database.py#L525) and [`orchestration_steps`](../app/database.py#L552)—track top-level workflow lifecycles and DAG step executions across container restarts.
 2. **Topological DAG Execution:** Arbitrary multi-agent task directed acyclic graphs run with dependency tracking, concurrency for independent read-only tasks, and strict operation allowlisting.
 3. **Bounded Dynamic Replanning:** When an agent encounters missing document evidence or an accounts-payable discrepancy, the orchestrator autonomously revises the DAG plan (bounded to $\le 2$ revisions), injects authorized recovery steps (e.g., semantic RAG document extraction or maintenance work order correlation), and logs plan lineage in the World Model.
 4. **Crash Recovery & Workflow Resumption:** On API process startup or via external recovery API calls, interrupted `running` workflows are recovered from PostgreSQL without re-executing already-completed external actions.
@@ -45,7 +45,7 @@ Before implementing code changes, we performed a thorough audit of the existing 
 ## 2. Workflow Persistence & State Machine
 
 ### 2.1 Database Schema
-In [`app/database.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/database.py), we created two new persistent tables with strict foreign keys, indices, and constraints:
+In [`app/database.py`](../app/database.py), we created two new persistent tables with strict foreign keys, indices, and constraints:
 
 ```sql
 CREATE TABLE IF NOT EXISTS orchestration_workflows (
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS orchestration_steps (
 ```
 
 ### 2.2 Formal State Machine & Valid Transitions
-Workflow instances transition strictly according to the validated state transition map in [`app/orchestrator.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L78):
+Workflow instances transition strictly according to the validated state transition map in [`app/orchestrator.py`](../app/orchestrator.py#L78):
 
 ```
        [created]
@@ -120,7 +120,7 @@ Workflow instances transition strictly according to the validated state transiti
      [failed] (recoverable)
 ```
 
-Transitions are protected via row-level locking (`SELECT ... FOR UPDATE`) in [`update_workflow_state()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L561). Invalid transitions (such as moving from `completed` or `cancelled` to any state, or jumping directly from `planned` to `completed`) raise a `ValueError` (HTTP 400).
+Transitions are protected via row-level locking (`SELECT ... FOR UPDATE`) in [`update_workflow_state()`](../app/orchestrator.py#L561). Invalid transitions (such as moving from `completed` or `cancelled` to any state, or jumping directly from `planned` to `completed`) raise a `ValueError` (HTTP 400).
 
 ---
 
@@ -142,7 +142,7 @@ To prevent model-generated plans or untrusted requests from executing arbitrary 
 | `maintenance_sla` | `assess_habitability_risk` | Assesses emergency work orders against statutory habitability standards. |
 
 ### 3.2 Topological Concurrency & Step Execution
-In [`execute_workflow_dag()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L740):
+In [`execute_workflow_dag()`](../app/orchestrator.py#L740):
 1. **Dependency Validation:** A step is only runnable if all step IDs listed in its `dependencies` array have reached state `completed`.
 2. **Safe Concurrency:** When multiple steps have all dependencies satisfied and are read-only/independent (such as `step-1-doc` and `step-2-fin` in lease cross-validation), they execute concurrently in a `ThreadPoolExecutor(max_workers=2)`.
 3. **Short-Circuit on Approval:** If any step triggers an approval requirement (e.g., spending threshold exceeded), the DAG pauses immediately in `waiting_for_approval` and does not proceed to consequential actions.
@@ -151,7 +151,7 @@ In [`execute_workflow_dag()`](file:///c:/Users/pulig/Downloads/enigma-project/en
 
 ## 4. Bounded Dynamic Replanning
 
-When an agent reports missing evidence, an AP discrepancy, low confidence, or an abstention, the engine invokes [`attempt_dynamic_replanning()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L820):
+When an agent reports missing evidence, an AP discrepancy, low confidence, or an abstention, the engine invokes [`attempt_dynamic_replanning()`](../app/orchestrator.py#L820):
 
 1. **Strict Revision Bound:** A maximum of 2 dynamic revisions (`plan_revision <= 3`) are permitted. Attempting a 3rd revision terminates the loop and escalates the workflow to `needs_review`.
 2. **Missing Document Evidence Recovery:** If the `document_intelligence` agent abstains due to missing document text, the replanner injects `recover_missing_document_evidence`, querying pgvector semantic RAG embeddings to retrieve itemized invoice text.
@@ -164,13 +164,13 @@ When an agent reports missing evidence, an AP discrepancy, low confidence, or an
 ## 5. Retry, Error Classification & Process Restart Recovery
 
 ### 5.1 Error Classification & Bounded Retries
-Errors during step execution are classified in [`app/orchestrator.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L605):
+Errors during step execution are classified in [`app/orchestrator.py`](../app/orchestrator.py#L605):
 - **Transient Errors:** Database connection drops, network timeouts, and NVIDIA NIM rate limits (HTTP 429) / service errors (HTTP 502, 503, 504). Handled via exponential backoff with jitter up to `max_retries` (default: 3).
 - **Permanent Validation Errors:** Schema violations, invalid operations not on the allowlist, and bad payloads fail immediately without endless retries.
 - **Authorization & Tenant Boundary Failures:** Return HTTP 403 immediately and halt workflow progress.
 
 ### 5.2 Restart Recovery (`recover_interrupted_workflows`)
-When the API server starts up (invoked in `lifespan` in [`app/main.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/main.py#L57)) or upon calling `POST /api/orchestrator/workflows/recover`:
+When the API server starts up (invoked in `lifespan` in [`app/main.py`](../app/main.py#L57)) or upon calling `POST /api/orchestrator/workflows/recover`:
 1. Scans `orchestration_workflows` for workflows stranded in `running` or `retrying`.
 2. Resumes eligible workflows from their persisted state in PostgreSQL.
 3. Steps already marked `completed` are **not** re-executed, preventing duplicate payments, double ledger postings, or duplicate tenant emails.
@@ -181,7 +181,7 @@ When the API server starts up (invoked in `lifespan` in [`app/main.py`](file:///
 ## 6. Business Outcome Verification & Separation of Duties
 
 ### 6.1 Outcome Verification
-A workflow is never marked `completed` merely because a Python function returned. In [`verify_workflow_outcome()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L926), the engine independently verifies:
+A workflow is never marked `completed` merely because a Python function returned. In [`verify_workflow_outcome()`](../app/orchestrator.py#L926), the engine independently verifies:
 - **Invoice Approval:** 
   - Invoice record exists in `vendor_invoices` in PostgreSQL.
   - Active compliance stop-payment holds (`risk_findings` in state `open`/`under_review`) are zero.
@@ -195,7 +195,7 @@ A workflow is never marked `completed` merely because a Python function returned
   - Emergency status and jurisdiction configuration verified; risk assessment is kept informative and prevented from executing automated unauthorized financial charges.
 
 ### 6.2 Separation of Duties Enforcement
-In [`approve_workflow()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/orchestrator.py#L1038):
+In [`approve_workflow()`](../app/orchestrator.py#L1038):
 - **Self-Approval Prevention:** Identifiers belonging to AI systems (`assistant_orchestrator`, `system`, `orchestrator`, `ai_agent`) are strictly rejected with HTTP 403: *"Separation of duties violation: Orchestrator agent cannot self-approve restricted workflows."*
 - **Role Authorization:** Reviewers must possess authorized roles (`property_manager`, `finance_manager`, `financial_controller`, `compliance_officer`). Unauthorized roles (e.g., `resident` or `vendor`) are rejected with HTTP 403.
 - **Terminal State Protection:** Workflows in terminal states (`completed`, `cancelled`) cannot be modified or re-approved.
@@ -204,7 +204,7 @@ In [`approve_workflow()`](file:///c:/Users/pulig/Downloads/enigma-project/enigma
 
 ## 7. Workflow Management APIs
 
-We extended the authenticated, tenant-isolated API surface in [`app/main.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/app/main.py):
+We extended the authenticated, tenant-isolated API surface in [`app/main.py`](../app/main.py):
 
 | Method | Endpoint | Description | Tenant Isolated |
 |---|---|---|:---:|
@@ -225,7 +225,7 @@ We extended the authenticated, tenant-isolated API surface in [`app/main.py`](fi
 
 ## 8. Test Execution & Verification Results
 
-### 8.1 Dedicated Phase 6 Test Suite ([`tests/test_dynamic_orchestration_phase6.py`](file:///c:/Users/pulig/Downloads/enigma-project/enigma-project/tests/test_dynamic_orchestration_phase6.py))
+### 8.1 Dedicated Phase 6 Test Suite ([`tests/test_dynamic_orchestration_phase6.py`](../tests/test_dynamic_orchestration_phase6.py))
 All 16 required test scenarios were implemented and verified against PostgreSQL:
 
 ```bash

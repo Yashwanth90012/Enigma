@@ -121,7 +121,16 @@ def fnv1a(s: str) -> int:
 
 
 def embed(text: str) -> List[float]:
-    """Deterministic 64-dimensional mock embedding vector (unit L2-normalized)."""
+    """Deterministic 64-dimensional mock embedding vector (unit L2-normalized).
+
+    CONFORMANCE & EVALUATION NOTICE:
+    This function reproduces the upstream Meterless H-MEM TypeScript reference
+    implementation (reference/src/embeddings.ts) using deterministic FNV-1a lexical hashing.
+    It is explicitly designed for deterministic conformance test vectors, local verification,
+    and offline development environments. It is NOT a semantic neural embedding model and
+    must not be represented as evidence of semantic search quality. Production semantic RAG
+    is routed separately through UnifiedEmbeddingProvider in app/embeddings.py.
+    """
     vec = [0.0] * DIM
     for token in tokenize(text):
         h = fnv1a(token)
@@ -133,6 +142,19 @@ def embed(text: str) -> List[float]:
     if norm == 0.0:
         return vec
     return [v / norm for v in vec]
+
+
+def get_hmem_embedding_mode() -> Dict[str, Any]:
+    """Diagnostic helper identifying the active H-MEM embedding mode and purpose."""
+    return {
+        "engine": "hmem",
+        "mode": "deterministic_conformance_mock",
+        "algorithm": "FNV-1a 64-dimensional L2-normalized lexical hash",
+        "dimension": DIM,
+        "is_semantic": False,
+        "purpose": "test_conformance_and_offline_dev",
+        "production_rag_service": "app.embeddings.UnifiedEmbeddingProvider"
+    }
 
 
 def cosine(a: List[float], b: List[float]) -> float:

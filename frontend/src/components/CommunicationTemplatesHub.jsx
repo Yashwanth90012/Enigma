@@ -23,7 +23,7 @@ export default function CommunicationTemplatesHub({ currentOrgId = 'ORG-APEX' })
 
   // Test Send Modal State
   const [isTestSendModalOpen, setIsTestSendModalOpen] = useState(false);
-  const [testRecipient, setTestRecipient] = useState('puligillayashwanth776@gmail.com');
+  const [testRecipient, setTestRecipient] = useState('test-resident@example.com');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSendResult, setTestSendResult] = useState(null);
 
@@ -559,8 +559,8 @@ export default function CommunicationTemplatesHub({ currentOrgId = 'ORG-APEX' })
                     }}>
                       {/* Email Header Simulation */}
                       <div style={{ backgroundColor: 'var(--bg-inset)', padding: '12px 18px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div><strong>From:</strong> EQUILIBRA Property Operations &lt;puligillayashwanth776@gmail.com&gt;</div>
-                        <div><strong>To:</strong> Yashwanth Puligilla &lt;puligillayashwanth776@gmail.com&gt;</div>
+                        <div><strong>From:</strong> EQUILIBRA Property Operations &lt;notifications@equilibra.ai&gt;</div>
+                        <div><strong>To:</strong> Resident &lt;resident@example.com&gt;</div>
                         <div><strong>Subject:</strong> <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{previewData.rendered_subject}</span></div>
                       </div>
 
