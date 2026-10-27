@@ -381,4 +381,3 @@ tests/test_e2e_reliability_phase7.py (28 passed)
 Built for the **GenAI Works Open Agent Hackathon 2026**:
 - **Meterless:** Native integration of the Triple-Engine Core (**H-MEM**, **World Model**, and **Markovian**).
 - **Zetaris:** Enterprise SQL data virtualization across distributed accounting and banking databases.
-- **License:** Open Source under the [MIT License](LICENSE).
