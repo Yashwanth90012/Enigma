@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-    database_url: str = 'postgresql://enigma:enigma_local_only@localhost:5433/enigma'
+    database_url: str = 'postgresql://enigma:enigma_local_only@localhost:5434/enigma'
     data_dir: str = '/app/data'
     finance_source: str = 'fixture'
     # Provider selection and failover

@@ -63,7 +63,27 @@ class SimpleConnectionPool:
                 self._created = max(0, self._created - 1)
 
     def _create_conn(self) -> psycopg.Connection:
-        conn = psycopg.connect(self.dsn, autocommit=False)
+        try:
+            conn = psycopg.connect(self.dsn, autocommit=False)
+        except psycopg.OperationalError as exc:
+            # If connecting to localhost fails, try alternative common local ports (5434, 5432, 5433)
+            # This ensures developer ergonomics across Docker Compose host bindings and native Postgres.
+            alt_conn = None
+            if "localhost" in self.dsn or "127.0.0.1" in self.dsn:
+                for alt_port in ("5434", "5432", "5433"):
+                    if f":{alt_port}" not in self.dsn:
+                        alt_dsn = re.sub(r':\d+(/|$)', f':{alt_port}\\1', self.dsn)
+                        try:
+                            alt_conn = psycopg.connect(alt_dsn, autocommit=False)
+                            self.dsn = alt_dsn
+                            break
+                        except Exception:
+                            continue
+            if alt_conn is not None:
+                conn = alt_conn
+            else:
+                raise exc
+
         try:
             register_vector(conn)
             conn._vector_registered = True
